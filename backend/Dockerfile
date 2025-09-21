@@ -17,9 +17,6 @@ COPY *.json /app/
 
 RUN export $(cat /app/.env | xargs)
 
-ENV FRONTEND_URL='http://localhost:8501'
-ENV BACKEND_URL='http://localhost:7000'
-
 EXPOSE 7000
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7000"]

@@ -99,7 +99,7 @@ else:
 st.markdown('</div>', unsafe_allow_html=True)
 
 # Main content
-st.title("Welcome to My Blogging Application!")
+st.title("Welcome to ennui-rag-v2")
 
 # User Dashboard if logged in
 if st.session_state["jwt"] is not None:

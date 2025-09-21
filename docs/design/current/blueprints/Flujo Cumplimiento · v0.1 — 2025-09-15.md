@@ -1,0 +1,62 @@
+flowchart TD
+    A[Inicio: Crear/Seleccionar Programa] --> B[Cohorte: instancia del programa]
+
+    %% ================= CONFIGURACION =================
+    subgraph Configuracion_Blueprint
+        B --> C1[Overview]
+        B --> C2[Etapas]
+        B --> C3[Catalogo de Tipos]
+        B --> C4[Plantillas]
+        C4 --> C4A[Selector de Plantillas]
+        B --> C5[Reglas y Politicas]
+        B --> C6[Permisos y Roles]
+    end
+
+    %% ================= OPERACION (DETALLADA) =================
+    subgraph Operacion_Run
+        B --> D1[Cohorte en ejecucion]
+        D1 --> P1[Participation / Enrollment]
+        D1 --> APP[Application / Seleccion]
+        D1 --> MOD[Module opcional]
+        D1 --> SES[Session]
+
+        %% Evidencias y pipeline de cumplimiento
+        D1 --> D2[Inbox de Evidencias / Staging]
+        D2 --> D3[Identity Resolution]
+        D3 --> D4[Evidence]
+        D4 --> D5[Evaluation]
+        D5 --> D6[ComplianceStatus]
+        D6 --> KPI[KPIs y Dashboards]
+
+        %% Asistencia explicita
+        SES --> ATT[Attendance]
+        P1 --> ATT
+
+        %% Mentorias explicitas
+        D1 --> MM[MentoringMatch]
+        MM --> MEN[Mentor]
+        MM --> ORG[Organization]
+
+        %% Contexto de evidencias (visible)
+        D4 --> ECTX[EvidenceContext]
+        ECTX --> SES
+        ECTX --> ORG
+        ECTX --> PER[Person]
+    end
+
+    %% ================= CONOCIMIENTO & ANALITICA =================
+    subgraph Conocimiento_Analitica
+        D4 --> RAG[RAG Index]
+        D6 --> DASH[Dashboards]
+        D6 --> EVT[Eventos y Auditoria]
+    end
+
+    %% ================= CUMPLIMIENTO (PATRON) =================
+    subgraph Cumplimiento
+        H1[Requirement]
+        H2[Assignment]
+        H3[Evidence]
+        H4[Evaluation]
+        H5[ComplianceStatus]
+        H1 --> H2 --> H3 --> H4 --> H5
+    end

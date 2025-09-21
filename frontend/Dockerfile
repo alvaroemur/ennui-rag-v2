@@ -6,9 +6,8 @@ FROM python:3.9
 # Definir o diretório de trabalho no container
 WORKDIR /app
 
-ENV FRONTEND_URL='http://localhost:8501'
-ENV BACKEND_URL='http://localhost:7000'
-ENV BACKEND_URL_INTERNAL='http://backend:7000'
+COPY .env /app/.env
+RUN export $(cat /app/.env | xargs)
 
 # Copiar os arquivos de dependências e instalar
 COPY requirements.txt /app/requirements.txt
