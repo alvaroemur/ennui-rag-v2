@@ -15,8 +15,6 @@ COPY . /app
 COPY .env /app/.env
 COPY *.json /app/
 
-RUN export $(cat /app/.env | xargs)
-
 EXPOSE 7000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7000", "--reload"]

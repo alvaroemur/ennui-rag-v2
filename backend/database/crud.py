@@ -1,6 +1,15 @@
 from sqlalchemy.orm import Session
-from database.schemas import UserCreate, UserUpdate, PostCreate, PostUpdate, PostResponse
-from database.models import  UserModel, PostModel
+from datetime import datetime
+from typing import Optional
+from database.schemas import (
+    UserCreate,
+    UserUpdate,
+    PostCreate,
+    PostUpdate,
+    PostResponse,
+    ProgramCreate,
+)
+from database.models import  UserModel, PostModel, Program, ProgramAccess, PermissionRequest
 
 
 def get_user(db: Session, user_id: int):
@@ -18,6 +27,23 @@ def create_user(db: Session, user: UserCreate):
     db.commit()
     db.refresh(db_user)
     return db_user
+
+def upsert_user_tokens(db: Session, *, email: str, name: str, access_token: Optional[str], refresh_token: Optional[str], token_expiry: Optional[datetime]):
+    user = get_user_by_email(db, email)
+    if not user:
+        user = UserModel(name=name, email=email)
+        db.add(user)
+        db.flush()
+    # Update tokens if provided
+    if access_token is not None:
+        user.google_access_token = access_token
+    if refresh_token is not None:
+        user.google_refresh_token = refresh_token
+    if token_expiry is not None:
+        user.google_token_expiry = token_expiry
+    db.commit()
+    db.refresh(user)
+    return user
 
 def delete_user(db: Session, user_id: int):
     db_user = db.query(UserModel).filter(UserModel.id == user_id).first()
@@ -67,6 +93,98 @@ def delete_post(db: Session, post_id: int):
     db.commit()
     return db_post
 
+
+# Program CRUD
+def get_program_by_folder_id(db: Session, folder_id: str):
+    return db.query(Program).filter(Program.drive_folder_id == folder_id).first()
+
+
+def create_program(db: Session, *, creator_user_id: int, folder_id: str, folder_name: Optional[str],
+                   internal_code: str, name: str, main_client: Optional[str],
+                   main_beneficiaries: Optional[str], start_date: Optional[datetime], end_date: Optional[datetime]):
+    # Ensure uniqueness by drive_folder_id at DB level; also check in code to return clearer errors
+    if get_program_by_folder_id(db, folder_id):
+        return None
+
+    program = Program(
+        drive_folder_id=folder_id,
+        drive_folder_name=folder_name,
+        internal_code=internal_code,
+        name=name,
+        main_client=main_client,
+        main_beneficiaries=main_beneficiaries,
+        start_date=start_date,
+        end_date=end_date,
+        created_by_user_id=creator_user_id,
+    )
+    db.add(program)
+    db.flush()
+
+    # Grant owner access to creator
+    access = ProgramAccess(program_id=program.id, user_id=creator_user_id, role="owner", active=True)
+    db.add(access)
+    db.commit()
+    db.refresh(program)
+    return program
+
+
+def list_programs_for_user(db: Session, *, user_id: int):
+    return (
+        db.query(Program)
+        .join(ProgramAccess, ProgramAccess.program_id == Program.id)
+        .filter(ProgramAccess.user_id == user_id, ProgramAccess.active.is_(True))
+        .all()
+    )
+
+
+def create_permission_request(db: Session, *, program_id: int, requester_user_id: int, message: Optional[str]):
+    # If already has access, do nothing
+    existing_access = (
+        db.query(ProgramAccess)
+        .filter(ProgramAccess.program_id == program_id, ProgramAccess.user_id == requester_user_id)
+        .first()
+    )
+    if existing_access:
+        return None
+    pr = PermissionRequest(program_id=program_id, requester_user_id=requester_user_id, message=message, status="pending")
+    db.add(pr)
+    db.commit()
+    db.refresh(pr)
+    return pr
+
+
+def list_permission_requests_for_owner(db: Session, *, owner_user_id: int):
+    # Requests for programs where this user is an owner
+    return (
+        db.query(PermissionRequest)
+        .join(Program, Program.id == PermissionRequest.program_id)
+        .join(ProgramAccess, (ProgramAccess.program_id == Program.id) & (ProgramAccess.user_id == owner_user_id))
+        .filter(ProgramAccess.role == "owner")
+        .filter(PermissionRequest.status == "pending")
+        .all()
+    )
+
+
+def decide_permission_request(db: Session, *, request_id: int, approver_user_id: int, approve: bool):
+    pr = db.query(PermissionRequest).filter(PermissionRequest.id == request_id).first()
+    if not pr or pr.status != "pending":
+        return None
+    pr.status = "approved" if approve else "rejected"
+    pr.decided_at = datetime.utcnow()
+    pr.decided_by_user_id = approver_user_id
+    # Grant access if approved
+    if approve:
+        existing_access = (
+            db.query(ProgramAccess)
+            .filter(ProgramAccess.program_id == pr.program_id, ProgramAccess.user_id == pr.requester_user_id)
+            .first()
+        )
+        if not existing_access:
+            db.add(ProgramAccess(program_id=pr.program_id, user_id=pr.requester_user_id, role="viewer", active=True))
+    db.commit()
+    db.refresh(pr)
+    return pr
+
 def update_post(db: Session, post_id: int, post: PostUpdate):
     db_post = db.query(PostModel).filter(PostModel.id == post_id).first()
 
@@ -78,6 +196,3 @@ def update_post(db: Session, post_id: int, post: PostUpdate):
 
     db.commit()
     return db_post
-
-
-

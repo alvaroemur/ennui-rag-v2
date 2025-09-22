@@ -7,7 +7,6 @@ FROM python:3.9
 WORKDIR /app
 
 COPY .env /app/.env
-RUN export $(cat /app/.env | xargs)
 
 # Copiar os arquivos de dependências e instalar
 COPY requirements.txt /app/requirements.txt

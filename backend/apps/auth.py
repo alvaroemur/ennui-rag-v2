@@ -11,6 +11,9 @@ from starlette.responses import JSONResponse
 from starlette.responses import HTMLResponse, RedirectResponse
 
 from apps.jwt import create_refresh_token, create_access_token, create_token, CREDENTIALS_EXCEPTION, decode_token, valid_email_from_db, add_email_to_db
+from sqlalchemy.orm import Session
+from database.database import get_db
+from database.crud import upsert_user_tokens
 
 # Create the auth app
 auth_app = FastAPI()
@@ -28,7 +31,7 @@ oauth = OAuth(starlette_config)
 oauth.register(
     name='google',
     server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
-    client_kwargs={'scope': 'openid email profile'},
+    client_kwargs={'scope': 'openid email profile https://www.googleapis.com/auth/drive.readonly'},
 )
 
 # Set up the middleware to read the request session
@@ -48,12 +51,13 @@ async def login(request: Request):
     redirect_uri = REDIRECT_LOGIN_URL  # This creates the url for our /auth endpoint
     print(f'Login request: {request}')
     print("Redirecting to:", redirect_uri)
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+    # Request offline access to get refresh_token and force consent to ensure Drive scope is granted
+    return await oauth.google.authorize_redirect(request, redirect_uri, access_type='offline', prompt='consent')
 
 @auth_app.get('/signup')
 async def signup(request: Request):
     redirect_uri = REDIRECT_SIGNUP_URL
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+    return await oauth.google.authorize_redirect(request, redirect_uri, access_type='offline', prompt='consent')
 
 @auth_app.get('/auth')
 async def auth(request: Request):
@@ -63,6 +67,22 @@ async def auth(request: Request):
         return HTMLResponse(f'<h1>{error.error}</h1>')
     # Parse user information from ID token
     user_data = await oauth.google.parse_id_token(request, token)
+    # Persist tokens for Drive access
+    access_token = token.get('access_token')
+    refresh_token = token.get('refresh_token')
+    expires_at = token.get('expires_at')
+    db: Session = next(get_db())
+    try:
+        upsert_user_tokens(
+            db,
+            email=user_data['email'],
+            name=user_data.get('name') or user_data.get('given_name') or 'Usuario',
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_expiry=datetime.fromtimestamp(expires_at) if expires_at else None,
+        )
+    finally:
+        db.close()
     if valid_email_from_db(user_data['email']):
         print('Email exists in db')
         # Create access and refresh tokens for the user
@@ -98,9 +118,27 @@ async def add(request: Request):
         print('Adding email to db')
         add_email_to_db(user_data['email'], user_data['name'])
 
+    # Persist tokens
+    access_token_google = token.get('access_token')
+    refresh_token_google = token.get('refresh_token')
+    expires_at = token.get('expires_at')
+    db: Session = next(get_db())
+    try:
+        upsert_user_tokens(
+            db,
+            email=user_data['email'],
+            name=user_data.get('name') or user_data.get('given_name') or 'Usuario',
+            access_token=access_token_google,
+            refresh_token=refresh_token_google,
+            token_expiry=datetime.fromtimestamp(expires_at) if expires_at else None,
+        )
+    finally:
+        db.close()
+
     access_token = create_token(user_data['email'])
     refresh_token = create_refresh_token(user_data['email'])
     redirect_url = f"{FRONTEND_URL}/?" + get_response(access_token, refresh_token, user_data['name'])
+    print(f'Redirecting to: {redirect_url}')
     return RedirectResponse(url=redirect_url)
 
 def get_response(access_token, refresh_token, name, **kwargs):

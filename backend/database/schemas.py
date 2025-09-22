@@ -1,7 +1,7 @@
 from pydantic import BaseModel, PositiveFloat, EmailStr, validator, Field
 from enum import Enum
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 
 class UserBase(BaseModel):
@@ -38,5 +38,51 @@ class PostResponse(PostBase):
     id: int
     created_at: datetime
     
+    class Config:
+        orm_mode = True
+
+
+# Program schemas
+class ProgramCreate(BaseModel):
+    folder_link_or_id: str
+    internal_code: str
+    name: str
+    main_client: Optional[str] = None
+    main_beneficiaries: Optional[str] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+
+
+class ProgramResponse(BaseModel):
+    id: int
+    drive_folder_id: str
+    drive_folder_name: Optional[str]
+    internal_code: str
+    name: str
+    main_client: Optional[str]
+    main_beneficiaries: Optional[str]
+    start_date: Optional[datetime]
+    end_date: Optional[datetime]
+
+    class Config:
+        orm_mode = True
+
+
+class PermissionRequestCreate(BaseModel):
+    program_id: Optional[int] = None
+    folder_link_or_id: Optional[str] = None
+    message: Optional[str] = None
+
+
+class PermissionRequestResponse(BaseModel):
+    id: int
+    program_id: int
+    requester_user_id: int
+    status: str
+    message: Optional[str]
+    created_at: datetime
+    decided_at: Optional[datetime]
+    decided_by_user_id: Optional[int]
+
     class Config:
         orm_mode = True
