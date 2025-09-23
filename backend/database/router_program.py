@@ -3,12 +3,13 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from database.database import get_db
-from database.schemas import ProgramCreate, ProgramResponse, PermissionRequestCreate, PermissionRequestResponse
+from database.schemas import ProgramCreate, ProgramResponse, PermissionRequestCreate, PermissionRequestResponse, DriveCheckResponse
 from database.crud import (
     get_user_by_email,
     get_program_by_folder_id,
     create_program,
     list_programs_for_user,
+    list_other_programs_for_user,
     create_permission_request,
     list_permission_requests_for_owner,
     decide_permission_request,
@@ -23,6 +24,11 @@ router = APIRouter()
 async def my_programs(db: Session = Depends(get_db), current_email: str = Depends(get_current_user_email)):
     user = get_user_by_email(db, email=current_email)
     return list_programs_for_user(db, user_id=user.id)
+
+@router.get("/programs/others", response_model=List[ProgramResponse])
+async def other_programs(db: Session = Depends(get_db), current_email: str = Depends(get_current_user_email)):
+    user = get_user_by_email(db, email=current_email)
+    return list_other_programs_for_user(db, user_id=user.id)
 
 
 @router.post("/programs/", response_model=ProgramResponse)
@@ -60,6 +66,28 @@ async def create_program_route(payload: ProgramCreate, db: Session = Depends(get
     if program is None:
         raise HTTPException(status_code=409, detail="Ya existe un programa para esa carpeta.")
     return program
+
+@router.get("/programs/check-drive", response_model=DriveCheckResponse)
+async def check_drive_access(q: str, db: Session = Depends(get_db), current_email: str = Depends(get_current_user_email)):
+    user = get_user_by_email(db, email=current_email)
+    folder_id = extract_folder_id(q)
+    if not folder_id:
+        raise HTTPException(status_code=400, detail="ID o link de carpeta inválido")
+
+    if not user.google_access_token:
+        raise HTTPException(status_code=400, detail="Tu cuenta no tiene permiso de Drive. Vuelve a iniciar sesión otorgando permisos de Drive.")
+
+    ok, folder_name = await validate_folder_access(user.google_access_token, folder_id)
+
+    existing = get_program_by_folder_id(db, folder_id)
+
+    return DriveCheckResponse(
+        folder_id=folder_id,
+        ok=bool(ok),
+        folder_name=folder_name if ok else None,
+        exists_program=existing is not None,
+        program=existing if existing is not None else None,
+    )
 
 
 @router.post("/programs/request-access", response_model=PermissionRequestResponse)

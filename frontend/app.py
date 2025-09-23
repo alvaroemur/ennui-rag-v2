@@ -92,11 +92,15 @@ st.markdown("""
     /* Floating notifications panel */
     .notif-panel { position: fixed; right: 24px; top: 72px; z-index: 9998; width: 360px; max-height: 60vh; overflow: auto; background: #ffffff; color: #111; border: 1px solid rgba(0,0,0,0.1); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); padding: 12px; }
     .notif-panel h4 { margin: 0 0 8px 0; font-size: 16px; }
+    .notif-panel .notif-close { position: absolute; right: 8px; top: 8px; text-decoration: none; color: #6c757d; font-weight: 700; font-size: 16px; padding: 2px 6px; border-radius: 6px; }
+    .notif-panel .notif-close:hover { background: rgba(0,0,0,0.05); color: #000; }
     .notif-item { padding: 8px 10px; border-radius: 8px; margin: 6px 0; border-left: 4px solid #ddd; background: #f8f9fa; }
     .notif-item.success { border-left-color: #198754; }
     .notif-item.error { border-left-color: #dc3545; }
     .notif-item.warning { border-left-color: #ffc107; }
     .notif-item.info { border-left-color: #0dcaf0; }
+    /* Navbar user display */
+    .nav-user { text-align: right; font-weight: 600; font-size: 16px; color: inherit; margin-top: 6px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -151,9 +155,12 @@ def render_navbar(title: str, breadcrumbs: Optional[List[str]] = None):
                             st.session_state["name"] = me.get("name") or st.session_state.get("name")
                     except Exception:
                         pass
-                cols = st.columns([3, 1, 1])
+                cols = st.columns([4, 1, 1])
                 with cols[0]:
-                    st.caption(st.session_state.get("user_email") or st.session_state.get("name") or "Usuario")
+                    st.markdown(
+                        f"<div class='nav-user'>{st.session_state.get('user_email') or st.session_state.get('name') or 'Usuario'}</div>",
+                        unsafe_allow_html=True,
+                    )
                 with cols[1]:
                     notif_count = st.session_state.get("unread_count", 0)
                     bell = f"🔔 {notif_count}" if notif_count else "🔔"
@@ -181,19 +188,28 @@ def render_navbar(title: str, breadcrumbs: Optional[List[str]] = None):
                     if st.button("Sign Up", key="navbar_signup"):
                         st.markdown(f'<meta http-equiv="refresh" content="0;url={SIGNUP_URL}">', unsafe_allow_html=True)
 
-    # Notifications dropdown/panel (floating HTML) under navbar
+    # Notifications panel (Streamlit-native in sidebar)
     if st.session_state.get("jwt") and st.session_state.get("show_notifications"):
         notifs = st.session_state.get("notifications", [])
-        if not notifs:
-            panel_html = "<div class='notif-panel'><h4>Notificaciones</h4><div class='notif-item info'>Sin notificaciones</div></div>"
-        else:
-            items_html = []
-            for n in reversed(notifs[-10:]):
-                level = (n.get("level") or "info").lower()
-                msg = n.get("message") or ""
-                items_html.append(f"<div class='notif-item {level}'>{msg}</div>")
-            panel_html = "<div class='notif-panel'><h4>Notificaciones</h4>" + "".join(items_html) + "</div>"
-        st.markdown(panel_html, unsafe_allow_html=True)
+        with st.sidebar:
+            st.markdown("### Notificaciones")
+            if st.button("Cerrar", key="sidebar_close_notifs"):
+                st.session_state["show_notifications"] = False
+                st.rerun()
+            if not notifs:
+                st.info("Sin notificaciones")
+            else:
+                for n in reversed(notifs[-10:]):
+                    level = (n.get("level") or "info").lower()
+                    msg = n.get("message") or ""
+                    if level == "success":
+                        st.success(msg)
+                    elif level == "error":
+                        st.error(msg)
+                    elif level == "warning":
+                        st.warning(msg)
+                    else:
+                        st.info(msg)
 
 # Check if user is logged in
 query_params = st.query_params
@@ -218,6 +234,8 @@ if access_token and refresh_token:
     # No limpiamos los query params para preservar la sesión tras recargar
 else:
     pass
+
+# (Removed) URL-param based close; now using Streamlit button
 
     
 if not ("jwt" in st.session_state and st.session_state["jwt"] is not None):

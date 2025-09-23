@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from database.database import SessionLocal, get_db
 from database.schemas import UserResponse, UserCreate, UserUpdate
 from typing import List
-from database.crud import get_user, create_user, delete_user, update_user, get_users
+from database.crud import get_user, create_user, delete_user, update_user, get_users, get_recent_users, get_user_by_email
 from apps.jwt import get_current_user_email
 
 router = APIRouter()
@@ -16,6 +16,17 @@ def create_user_route(user: UserCreate, db: Session = Depends(get_db)):
 def read_all_users_route(db: Session = Depends(get_db), current_email: str = Depends(get_current_user_email)):
     users = get_users(db)
     return users
+
+@router.get("/users/me", response_model=UserResponse)
+def read_current_user_route(db: Session = Depends(get_db), current_email: str = Depends(get_current_user_email)):
+    user = get_user_by_email(db, email=current_email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+@router.get("/public/recent-users", response_model=List[UserResponse])
+def public_recent_users_route(db: Session = Depends(get_db), limit: int = 5):
+    return get_recent_users(db, limit=limit)
 
 @router.get("/users/{user_id}", response_model=UserResponse)
 def read_user_route(user_id: int, db: Session = Depends(get_db)):

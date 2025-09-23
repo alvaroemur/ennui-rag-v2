@@ -86,3 +86,11 @@ class PermissionRequestResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+class DriveCheckResponse(BaseModel):
+    folder_id: str
+    ok: bool
+    folder_name: Optional[str]
+    exists_program: bool
+    program: Optional[ProgramResponse] = None

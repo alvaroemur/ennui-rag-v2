@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import and_
 from datetime import datetime
 from typing import Optional
 from database.schemas import (
@@ -20,6 +21,9 @@ def get_user_by_email(db: Session, email: str):
 
 def get_users(db: Session):
     return db.query(UserModel).all()
+
+def get_recent_users(db: Session, limit: int = 5):
+    return db.query(UserModel).order_by(UserModel.id.desc()).limit(limit).all()
 
 def create_user(db: Session, user: UserCreate):
     db_user = UserModel(**user.dict())
@@ -133,6 +137,25 @@ def list_programs_for_user(db: Session, *, user_id: int):
         db.query(Program)
         .join(ProgramAccess, ProgramAccess.program_id == Program.id)
         .filter(ProgramAccess.user_id == user_id, ProgramAccess.active.is_(True))
+        .all()
+    )
+
+def list_other_programs_for_user(db: Session, *, user_id: int):
+    return (
+        db.query(Program)
+        .outerjoin(
+            ProgramAccess,
+            and_(ProgramAccess.program_id == Program.id,
+                 ProgramAccess.user_id == user_id,
+                 ProgramAccess.active.is_(True))
+        )
+        .outerjoin(
+            PermissionRequest,
+            and_(PermissionRequest.program_id == Program.id,
+                 PermissionRequest.requester_user_id == user_id)
+        )
+        .filter(ProgramAccess.id.is_(None))
+        .filter(PermissionRequest.id.is_(None))
         .all()
     )
 
