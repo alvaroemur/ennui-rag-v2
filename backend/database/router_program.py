@@ -7,6 +7,7 @@ from database.schemas import ProgramCreate, ProgramResponse, PermissionRequestCr
 from database.crud import (
     get_user_by_email,
     get_program_by_folder_id,
+    get_program_by_id,
     create_program,
     list_programs_for_user,
     list_other_programs_for_user,
@@ -29,7 +30,6 @@ async def my_programs(db: Session = Depends(get_db), current_email: str = Depend
 async def other_programs(db: Session = Depends(get_db), current_email: str = Depends(get_current_user_email)):
     user = get_user_by_email(db, email=current_email)
     return list_other_programs_for_user(db, user_id=user.id)
-
 
 @router.post("/programs/", response_model=ProgramResponse)
 async def create_program_route(payload: ProgramCreate, db: Session = Depends(get_db), current_email: str = Depends(get_current_user_email)):
@@ -88,6 +88,14 @@ async def check_drive_access(q: str, db: Session = Depends(get_db), current_emai
         exists_program=existing is not None,
         program=existing if existing is not None else None,
     )
+
+@router.get("/programs/{program_id}", response_model=ProgramResponse)
+async def get_program(program_id: int, db: Session = Depends(get_db), current_email: str = Depends(get_current_user_email)):
+    user = get_user_by_email(db, email=current_email)
+    program = get_program_by_id(db, program_id=program_id, user_id=user.id)
+    if not program:
+        raise HTTPException(status_code=404, detail="Programa no encontrado o sin acceso")
+    return program
 
 
 @router.post("/programs/request-access", response_model=PermissionRequestResponse)

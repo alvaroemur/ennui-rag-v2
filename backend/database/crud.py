@@ -160,6 +160,18 @@ def list_other_programs_for_user(db: Session, *, user_id: int):
     )
 
 
+def get_program_by_id(db: Session, *, program_id: int, user_id: int):
+    """Get a program by ID if user has access to it"""
+    return (
+        db.query(Program)
+        .join(ProgramAccess, ProgramAccess.program_id == Program.id)
+        .filter(Program.id == program_id)
+        .filter(ProgramAccess.user_id == user_id)
+        .filter(ProgramAccess.active.is_(True))
+        .first()
+    )
+
+
 def create_permission_request(db: Session, *, program_id: int, requester_user_id: int, message: Optional[str]):
     # If already has access, do nothing
     existing_access = (

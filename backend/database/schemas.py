@@ -2,6 +2,7 @@ from pydantic import BaseModel, PositiveFloat, EmailStr, validator, Field
 from enum import Enum
 from datetime import datetime
 from typing import Optional, List
+import json
 
 
 class UserBase(BaseModel):
@@ -94,3 +95,149 @@ class DriveCheckResponse(BaseModel):
     folder_name: Optional[str]
     exists_program: bool
     program: Optional[ProgramResponse] = None
+
+
+# Program Configuration Schemas
+
+class ProgramPhaseBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    order_index: int = 0
+
+class ProgramPhaseCreate(ProgramPhaseBase):
+    pass
+
+class ProgramPhaseUpdate(ProgramPhaseBase):
+    pass
+
+class ProgramPhaseResponse(ProgramPhaseBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
+
+
+class ProgramScopeBase(BaseModel):
+    general_objective: Optional[str] = None
+    specific_objectives: Optional[List[str]] = None
+
+class ProgramScopeCreate(ProgramScopeBase):
+    phases: Optional[List[ProgramPhaseCreate]] = []
+
+class ProgramScopeUpdate(ProgramScopeBase):
+    phases: Optional[List[ProgramPhaseUpdate]] = []
+
+class ProgramScopeResponse(ProgramScopeBase):
+    id: int
+    program_id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    phases: List[ProgramPhaseResponse] = []
+
+    class Config:
+        orm_mode = True
+
+
+class TheoryOfChangeProductBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    target_quantity: int = 0
+    order_index: int = 0
+
+class TheoryOfChangeProductCreate(TheoryOfChangeProductBase):
+    pass
+
+class TheoryOfChangeProductUpdate(TheoryOfChangeProductBase):
+    pass
+
+class TheoryOfChangeProductResponse(TheoryOfChangeProductBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
+
+
+class TheoryOfChangeResultBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    target_percentage: float = Field(0.0, ge=0.0, le=100.0)
+    timeframe: Optional[str] = None
+    order_index: int = 0
+
+class TheoryOfChangeResultCreate(TheoryOfChangeResultBase):
+    pass
+
+class TheoryOfChangeResultUpdate(TheoryOfChangeResultBase):
+    pass
+
+class TheoryOfChangeResultResponse(TheoryOfChangeResultBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
+
+
+class TheoryOfChangeImpactBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    target_percentage: float = Field(0.0, ge=0.0, le=100.0)
+    timeframe: Optional[str] = None
+    order_index: int = 0
+
+class TheoryOfChangeImpactCreate(TheoryOfChangeImpactBase):
+    pass
+
+class TheoryOfChangeImpactUpdate(TheoryOfChangeImpactBase):
+    pass
+
+class TheoryOfChangeImpactResponse(TheoryOfChangeImpactBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
+
+
+class TheoryOfChangeBase(BaseModel):
+    pass
+
+class TheoryOfChangeCreate(TheoryOfChangeBase):
+    products: Optional[List[TheoryOfChangeProductCreate]] = []
+    results: Optional[List[TheoryOfChangeResultCreate]] = []
+    impacts: Optional[List[TheoryOfChangeImpactCreate]] = []
+
+class TheoryOfChangeUpdate(TheoryOfChangeBase):
+    products: Optional[List[TheoryOfChangeProductUpdate]] = []
+    results: Optional[List[TheoryOfChangeResultUpdate]] = []
+    impacts: Optional[List[TheoryOfChangeImpactUpdate]] = []
+
+class TheoryOfChangeResponse(TheoryOfChangeBase):
+    id: int
+    program_id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    products: List[TheoryOfChangeProductResponse] = []
+    results: List[TheoryOfChangeResultResponse] = []
+    impacts: List[TheoryOfChangeImpactResponse] = []
+
+    class Config:
+        orm_mode = True
+
+
+class ProgramConfigurationResponse(BaseModel):
+    """Complete program configuration including all related data"""
+    program: ProgramResponse
+    scope: Optional[ProgramScopeResponse] = None
+    theory_of_change: Optional[TheoryOfChangeResponse] = None
+
+    class Config:
+        orm_mode = True

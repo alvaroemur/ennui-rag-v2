@@ -12,7 +12,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from database.database import SessionLocal, get_db
 from database.schemas import UserResponse, UserCreate, UserUpdate
-from database.crud import create_user, get_users
+from database.crud import create_user, get_users, get_user_by_email
 
 # from apps.db import is_token_blacklisted
 
@@ -32,7 +32,7 @@ API_SECRET_KEY = os.environ.get('API_SECRET_KEY')
 if API_SECRET_KEY is None:
     raise BaseException('Missing API_SECRET_KEY env var.')
 API_ALGORITHM = os.environ.get('API_ALGORITHM') or 'HS256'
-API_ACCESS_TOKEN_EXPIRE_MINUTES = cast_to_number('API_ACCESS_TOKEN_EXPIRE_MINUTES') or 15
+API_ACCESS_TOKEN_EXPIRE_MINUTES = cast_to_number('API_ACCESS_TOKEN_EXPIRE_MINUTES') or 60
 REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 30
 
 # Token url (We should later create a token url that accepts just a user and a password to use swagger)
@@ -52,7 +52,7 @@ def create_access_token(*, data: dict, expires_delta: timedelta = None):
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.utcnow() + timedelta(minutes=60)
     to_encode.update({'exp': expire})
     encoded_jwt = jwt.encode(to_encode, API_SECRET_KEY, algorithm=API_ALGORITHM)
     return encoded_jwt
@@ -74,14 +74,10 @@ def valid_email_from_db(email):
     db_session = next(get_db())
     
     try:
-        users = get_users(db=db_session)  # Fetch users from the database
-        for user in users:
-            if user.email == email:
-                return True
+        user = get_user_by_email(db=db_session, email=email)
+        return user is not None
     finally:
         db_session.close()  # Make sure to close the session
-
-    return False
 
 
 def create_user_route(user: UserCreate, db: Session = Depends(get_db)):

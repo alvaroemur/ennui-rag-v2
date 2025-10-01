@@ -1,16 +1,24 @@
-version: '2.2'
+version: '3.8'
 services:
   postgres:
-    image: postgres:latest
+    image: postgres:15
+    restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
       POSTGRES_DB: mydatabase
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
-      PYTHONUNBUFFERED: 1
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
     networks:
       - mynetwork
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d mydatabase"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend:
     build: 
@@ -21,7 +29,8 @@ services:
     ports:
       - "7000:7000"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - mynetwork
     env_file:
