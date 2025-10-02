@@ -1,11 +1,17 @@
 import streamlit as st
 from config import CUSTOM_CSS
-from notifications import initialize_notifications, render_notifications_panel, render_toast
+from sidebar_notifications import initialize_notifications, render_notifications_panel, render_toast
+from sidebar_program_navigation import render_program_navigation_sidebar
 from navbar import render_navbar
 from login_screen import render_login_screen, handle_login_redirect
 from create_program_screen import render_create_program_screen
-from program_config_screen import render_program_config_screen
-from main_dashboard import render_main_dashboard
+from program_config import render_program_config_screen
+from program_selection import render_program_selection
+from homepage import render_homepage
+from program_tracking import render_program_tracking
+from program_mel import render_dashboard_screen
+from repository_retrieval import render_retrieval_screen
+from repository_search import render_search_screen
 
 st.set_page_config(layout="wide", page_title="ennui-rag 2.0")
 
@@ -50,23 +56,44 @@ if is_authenticated:
     if "view" in st.session_state and st.session_state["view"] == "create_program":
         render_navbar(nav_title, ["Programas", "Crear programa"])
     elif "view" in st.session_state and st.session_state["view"] == "program_config":
-        render_navbar(nav_title, ["Programas", "Configuración"])
+        render_navbar(nav_title, ["Programas", "Homepage", "Configuración"])
+    elif "view" in st.session_state and st.session_state["view"] == "tracking":
+        render_navbar(nav_title, ["Programas", "Homepage", "Seguimiento"])
+    elif "view" in st.session_state and st.session_state["view"] == "dashboard":
+        render_navbar(nav_title, ["Programas", "Homepage", "Dashboard"])
+    elif "view" in st.session_state and st.session_state["view"] == "retrieval":
+        render_navbar(nav_title, ["Programas", "Homepage", "Retrieval"])
+    elif "view" in st.session_state and st.session_state["view"] == "search":
+        render_navbar(nav_title, ["Programas", "Homepage", "Search"])
+    elif "view" in st.session_state and st.session_state["view"] == "homepage":
+        render_navbar(nav_title, ["Programas", "Homepage"])
     else:
         render_navbar(nav_title, ["Programas"])
 
-    # Renderizar notificaciones
+    # Renderizar sidebar (navegación o notificaciones)
+    render_program_navigation_sidebar()
     render_notifications_panel()
     render_toast()
 
     # Inicializar vista si no está definida
     if "view" not in st.session_state:
-        st.session_state["view"] = "home"  # home | create_program | program_config
+        st.session_state["view"] = "program_selection"  # program_selection | create_program | homepage | program_config | tracking | dashboard | retrieval | search
 
     # Renderizar pantallas según la vista actual
     if st.session_state["view"] == "create_program":
         render_create_program_screen()
+    elif st.session_state["view"] == "homepage":
+        render_homepage()
     elif st.session_state["view"] == "program_config":
         render_program_config_screen()
+    elif st.session_state["view"] == "tracking":
+        render_program_tracking()
+    elif st.session_state["view"] == "dashboard":
+        render_dashboard_screen()
+    elif st.session_state["view"] == "retrieval":
+        render_retrieval_screen()
+    elif st.session_state["view"] == "search":
+        render_search_screen()
     else:
-        # Vista principal (home)
-        render_main_dashboard()
+        # Vista principal (selección de programa)
+        render_program_selection()

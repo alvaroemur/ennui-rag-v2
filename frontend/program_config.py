@@ -12,7 +12,7 @@ def render_program_config_screen():
     selected_program_id = st.session_state.get("selected_program_id")
     if not selected_program_id:
         st.error("No se ha seleccionado un programa.")
-        st.button("Volver", on_click=lambda: st.session_state.update({"view": "home"}))
+        st.button("Volver", on_click=lambda: st.session_state.update({"view": "homepage"}))
         st.stop()
 
     headers = {"Authorization": f"Bearer {st.session_state['jwt']}"}
@@ -24,20 +24,19 @@ def render_program_config_screen():
             program_data = resp.json()
         else:
             st.error("No se pudo cargar la información del programa.")
-            st.button("Volver", on_click=lambda: st.session_state.update({"view": "home"}))
+            st.button("Volver", on_click=lambda: st.session_state.update({"view": "homepage"}))
             st.stop()
     except Exception:
         st.error("Error de conexión al cargar el programa.")
-        st.button("Volver", on_click=lambda: st.session_state.update({"view": "home"}))
+        st.button("Volver", on_click=lambda: st.session_state.update({"view": "homepage"}))
         st.stop()
 
-    st.title(f"Configuración del Programa: {program_data.get('name', 'Sin nombre')}")
-    
     # Botón para volver
-    if st.button("← Volver a Programas"):
-        st.session_state["view"] = "home"
-        st.session_state["selected_program_id"] = None
+    if st.button("← Volver al Homepage"):
+        st.session_state["view"] = "homepage"
         st.rerun()
+    
+    st.title(f"Configuración del Programa: {program_data.get('name', 'Sin nombre')}")
 
     # Tabs para las diferentes secciones
     tab1, tab2, tab3 = st.tabs(["📝 Datos del Programa", "🎯 Alcance", "🔄 Teoría de Cambio"])

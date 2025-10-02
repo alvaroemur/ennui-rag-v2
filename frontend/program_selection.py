@@ -7,8 +7,8 @@ from config import API_BASE_URL_INTERNAL
 from auth_utils import make_authenticated_request
 
 
-def render_main_dashboard():
-    """Renderiza la pantalla principal del dashboard"""
+def render_program_selection():
+    """Renderiza la pantalla de selección de programas"""
     # Tres columnas: Mis programas | Otros programas | Crear programa
     col1, col2, col3 = st.columns(3)
 
@@ -44,9 +44,9 @@ def render_my_programs_section():
                         for p in programs
                     ]
                     idx = st.selectbox("Selecciona un programa", range(len(labels)), format_func=lambda i: labels[i])
-                    if st.button("Abrir programa", help="Abrir configuración del programa"):
+                    if st.button("Abrir programa", help="Abrir homepage del programa"):
                         st.session_state["selected_program_id"] = programs[idx]["id"]
-                        st.session_state["view"] = "program_config"
+                        st.session_state["view"] = "homepage"
                         st.rerun()
             else:
                 st.info("No tienes programas aún.")

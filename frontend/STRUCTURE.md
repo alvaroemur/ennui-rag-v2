@@ -15,7 +15,9 @@ frontend/
 ├── navbar.py                     # Barra de navegación
 ├── login_screen.py              # Pantalla de login
 ├── create_program_screen.py     # Pantalla de creación de programa
-├── program_config_screen.py     # Pantalla de configuración de programa
+├── program_config.py            # Pantalla de configuración de programa
+├── program_tracking.py          # Pantalla de seguimiento del programa
+├── program_mel.py               # Dashboard del programa (MEL)
 └── main_dashboard.py            # Dashboard principal autenticado
 ```
 
@@ -30,8 +32,9 @@ from notifications import initialize_notifications, render_notifications_panel, 
 from navbar import render_navbar
 from login_screen import render_login_screen, handle_login_redirect
 from create_program_screen import render_create_program_screen
-from program_config_screen import render_program_config_screen
-from main_dashboard import render_main_dashboard
+from program_config import render_program_config_screen
+from program_tracking import render_program_tracking
+from program_mel import render_dashboard_screen
 ```
 
 ## Ejecución

@@ -4,7 +4,7 @@ Pantalla de login de la aplicación
 import streamlit as st
 import requests
 from config import API_BASE_URL_INTERNAL, LOGIN_URL, SIGNUP_URL
-from notifications import push_notification
+from sidebar_notifications import push_notification
 
 
 def render_login_screen():

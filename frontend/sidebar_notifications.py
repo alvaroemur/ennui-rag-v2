@@ -19,6 +19,15 @@ def initialize_notifications():
         st.session_state["last_toast"] = None
     if "login_notified" not in st.session_state:
         st.session_state["login_notified"] = False
+    
+    # Agregar notificaciones de prueba si no hay ninguna
+    if not st.session_state["notifications"]:
+        st.session_state["notifications"] = [
+            {"message": "Bienvenido al sistema", "level": "success", "read": False},
+            {"message": "Programa configurado correctamente", "level": "info", "read": False},
+            {"message": "Nueva actualización disponible", "level": "warning", "read": False}
+        ]
+        st.session_state["unread_count"] = 3
 
 
 def push_notification(message: str, level: str = "info"):
@@ -29,13 +38,26 @@ def push_notification(message: str, level: str = "info"):
 
 def render_notifications_panel():
     """Renderiza el panel de notificaciones en el sidebar"""
-    if st.session_state.get("jwt") and st.session_state.get("show_notifications"):
+    # Mostrar notificaciones en todas las vistas autenticadas (incluyendo program_config)
+    current_view = st.session_state.get("view", "")
+    views_with_notifications = ["program_selection", "program_config", "homepage", "tracking", "dashboard", "retrieval", "search"]
+    
+    if ((st.session_state.get("jwt") or st.session_state.get("session_id")) and 
+        st.session_state.get("show_notifications") and 
+        current_view in views_with_notifications):
         notifs = st.session_state.get("notifications", [])
         with st.sidebar:
-            st.markdown("### Notificaciones")
-            if st.button("Cerrar", key="sidebar_close_notifs"):
+            st.markdown("### 🔔 Notificaciones")
+            # Cambiar texto del botón según si hay navegación disponible
+            if current_view in ["homepage", "tracking", "dashboard", "retrieval", "search"]:
+                button_text = "← Volver a Navegación"
+            else:
+                button_text = "← Cerrar Notificaciones"
+            
+            if st.button(button_text, key="sidebar_back_to_nav"):
                 st.session_state["show_notifications"] = False
                 st.rerun()
+            st.divider()
             if not notifs:
                 st.info("Sin notificaciones")
             else:

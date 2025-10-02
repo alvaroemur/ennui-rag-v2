@@ -13,7 +13,9 @@ frontend/
 ├── navbar.py                      # Barra de navegación
 ├── login_screen.py               # Pantalla de login
 ├── create_program_screen.py      # Pantalla de creación de programa
-├── program_config_screen.py      # Pantalla de configuración de programa
+├── program_config.py             # Pantalla de configuración de programa
+├── program_tracking.py           # Pantalla de seguimiento del programa
+├── program_mel.py                # Dashboard del programa (MEL)
 ├── main_dashboard.py             # Dashboard principal autenticado
 ├── run_app.py                    # Script para ejecutar la aplicación
 └── README.md                     # Este archivo
@@ -63,7 +65,9 @@ La aplicación está refactorizada en módulos independientes:
 - **`navbar.py`**: Barra de navegación superior
 - **`login_screen.py`**: Pantalla de autenticación
 - **`create_program_screen.py`**: Formulario de creación de programas
-- **`program_config_screen.py`**: Configuración de programas con tabs
+- **`program_config.py`**: Configuración de programas con tabs
+- **`program_tracking.py`**: Seguimiento y monitoreo del programa
+- **`program_mel.py`**: Dashboard del programa con indicadores MEL
 - **`main_dashboard.py`**: Dashboard principal con todas las secciones
 
 ## Características
