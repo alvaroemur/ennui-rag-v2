@@ -36,10 +36,9 @@ handle_login_redirect()
 is_authenticated = False
 
 if st.session_state.get("session_id"):
-    # Session-based authentication
-    from auth_utils import validate_session
-    if validate_session():
-        is_authenticated = True
+    # Session-based authentication - assume valid if session_id exists
+    # Validation will happen when making authenticated requests
+    is_authenticated = True
 elif st.session_state.get("jwt"):
     # Legacy token-based authentication
     is_authenticated = True

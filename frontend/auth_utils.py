@@ -33,11 +33,14 @@ def validate_session():
                 st.session_state["jwt"] = None
                 st.session_state["name"] = None
                 return False
+        else:
+            # Error de servidor, no limpiar sesión inmediatamente
+            print(f"Session validation failed with status {response.status_code}")
+            return False
     except Exception as e:
-        # En caso de error, limpiar sesión
-        st.session_state["session_id"] = None
-        st.session_state["jwt"] = None
-        st.session_state["name"] = None
+        # En caso de error de conexión, no limpiar sesión inmediatamente
+        # Solo limpiar si es un error específico de autenticación
+        print(f"Session validation error: {e}")
         return False
     
     return False
@@ -97,7 +100,7 @@ def make_authenticated_request(method, url, **kwargs):
     """Hace una petición autenticada y maneja la renovación automática de tokens"""
     headers = kwargs.get("headers", {})
     
-    # Para session-based auth, validar sesión primero
+    # Para session-based auth, validar sesión primero si no tenemos JWT
     if st.session_state.get("session_id") and not st.session_state.get("jwt"):
         if not validate_session():
             # Sesión inválida, redirigir a login
