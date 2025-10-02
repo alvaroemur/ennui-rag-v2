@@ -47,15 +47,30 @@ def render_login_screen():
 def handle_login_redirect():
     """Maneja la redirección después del login"""
     query_params = st.query_params
-    access_token = query_params.get("access_token", [None]) if "access_token" in query_params else None
-    refresh_token = query_params.get("refresh_token", [None]) if "refresh_token" in query_params else None
-    name = query_params.get("name", [None]) if "name" in query_params else None
-
+    session_id = query_params.get("session_id")
+    name = query_params.get("name")
+    
+    # Legacy token-based authentication (fallback)
+    access_token = query_params.get("access_token")
+    refresh_token = query_params.get("refresh_token")
+ 
     if "state" in query_params and query_params["state"] == "signup":
         st.info(f"No account found for {query_params['email']}. Please sign up.")
         del query_params["state"]
 
-    if access_token and refresh_token:
+    # Handle session-based authentication (new)
+    if session_id:
+        st.session_state["session_id"] = session_id
+        st.session_state["name"] = name
+        # Push notification and show toast instead of green box (only once)
+        if not st.session_state.get("login_notified"):
+            push_notification("Successfully logged in!", "success")
+            st.session_state["show_toast"] = True
+            st.session_state["last_toast"] = {"message": "Successfully logged in!", "level": "success"}
+            st.session_state["login_notified"] = True
+    
+    # Handle legacy token-based authentication (fallback)
+    elif access_token and refresh_token:
         st.session_state["jwt"] = access_token
         st.session_state["refresh_token"] = refresh_token
         st.session_state["name"] = name

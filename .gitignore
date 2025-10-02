@@ -16,3 +16,4 @@ venv
 *.json
 .terraform
 .idea
+db_data_snapshot_2025-10-01.tar.gz

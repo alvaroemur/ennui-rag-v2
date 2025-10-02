@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from database.schemas import (
     UserCreate,
@@ -9,8 +9,12 @@ from database.schemas import (
     PostUpdate,
     PostResponse,
     ProgramCreate,
+    SessionCreate,
+    SessionResponse,
+    SessionValidationResponse,
 )
-from database.models import  UserModel, PostModel, Program, ProgramAccess, PermissionRequest
+from database.models import  UserModel, PostModel, Program, ProgramAccess, PermissionRequest, UserSession
+import uuid
 
 
 def get_user(db: Session, user_id: int):
@@ -205,7 +209,7 @@ def decide_permission_request(db: Session, *, request_id: int, approver_user_id:
     if not pr or pr.status != "pending":
         return None
     pr.status = "approved" if approve else "rejected"
-    pr.decided_at = datetime.utcnow()
+    pr.decided_at = datetime.now(timezone.utc)
     pr.decided_by_user_id = approver_user_id
     # Grant access if approved
     if approve:
@@ -231,3 +235,123 @@ def update_post(db: Session, post_id: int, post: PostUpdate):
 
     db.commit()
     return db_post
+
+
+# Session CRUD operations
+def create_user_session(db: Session, *, user_id: int, session_data: SessionCreate) -> UserSession:
+    """Create a new user session"""
+    # Generate unique session ID
+    session_id = str(uuid.uuid4())
+    
+    # Create session
+    session = UserSession(
+        session_id=session_id,
+        user_id=user_id,
+        access_token=session_data.access_token,
+        refresh_token=session_data.refresh_token,
+        user_agent=session_data.user_agent,
+        ip_address=session_data.ip_address,
+        expires_at=session_data.expires_at,
+        is_active=True
+    )
+    
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return session
+
+
+def get_session_by_id(db: Session, session_id: str) -> Optional[UserSession]:
+    """Get session by session ID"""
+    return db.query(UserSession).filter(
+        UserSession.session_id == session_id,
+        UserSession.is_active == True
+    ).first()
+
+
+def validate_session(db: Session, session_id: str) -> SessionValidationResponse:
+    """Validate a session and return validation result"""
+    session = get_session_by_id(db, session_id)
+    
+    if not session:
+        return SessionValidationResponse(
+            valid=False,
+            message="Session not found or inactive"
+        )
+    
+    # Check if session is expired
+    if datetime.now(timezone.utc) > session.expires_at:
+        # Mark session as inactive
+        session.is_active = False
+        db.commit()
+        return SessionValidationResponse(
+            valid=False,
+            message="Session expired"
+        )
+    
+    # Update last accessed time
+    session.last_accessed = datetime.now(timezone.utc)
+    db.commit()
+    
+    # Get user email
+    user = get_user(db, session.user_id)
+    user_email = user.email if user else None
+    
+    return SessionValidationResponse(
+        valid=True,
+        user_email=user_email,
+        access_token=session.access_token
+    )
+
+
+def refresh_session_tokens(db: Session, session_id: str, *, 
+                         new_access_token: str, new_refresh_token: str) -> bool:
+    """Update session tokens"""
+    session = get_session_by_id(db, session_id)
+    if not session:
+        return False
+    
+    session.access_token = new_access_token
+    session.refresh_token = new_refresh_token
+    session.last_accessed = datetime.now(timezone.utc)
+    db.commit()
+    return True
+
+
+def deactivate_session(db: Session, session_id: str) -> bool:
+    """Deactivate a session (logout)"""
+    session = get_session_by_id(db, session_id)
+    if not session:
+        return False
+    
+    session.is_active = False
+    db.commit()
+    return True
+
+
+def deactivate_user_sessions(db: Session, user_id: int) -> int:
+    """Deactivate all sessions for a user"""
+    sessions = db.query(UserSession).filter(
+        UserSession.user_id == user_id,
+        UserSession.is_active == True
+    ).all()
+    
+    for session in sessions:
+        session.is_active = False
+    
+    db.commit()
+    return len(sessions)
+
+
+def cleanup_expired_sessions(db: Session) -> int:
+    """Clean up expired sessions"""
+    expired_sessions = db.query(UserSession).filter(
+        UserSession.expires_at < datetime.now(timezone.utc),
+        UserSession.is_active == True
+    ).all()
+    
+    for session in expired_sessions:
+        session.is_active = False
+    
+    db.commit()
+    return len(expired_sessions)

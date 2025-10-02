@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Foreig
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database.database import Base
+import uuid
 
 class UserModel(Base):
     __tablename__ = "users"
@@ -16,6 +17,7 @@ class UserModel(Base):
     # Relationships
     program_access = relationship("ProgramAccess", back_populates="user")
     created_programs = relationship("Program", back_populates="created_by_user")
+    sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
 
 class PostModel(Base):
     __tablename__ = "post"
@@ -205,3 +207,26 @@ class TheoryOfChangeImpact(Base):
     
     # Relationships
     theory_of_change = relationship("TheoryOfChange", back_populates="impacts")
+
+
+class UserSession(Base):
+    """User session model for server-side session storage"""
+    __tablename__ = "user_sessions"
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String, unique=True, index=True, nullable=False)  # UUID for session
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    # Session data
+    access_token = Column(String, nullable=False)  # JWT access token
+    refresh_token = Column(String, nullable=False)  # JWT refresh token
+    user_agent = Column(String, nullable=True)  # Browser user agent
+    ip_address = Column(String, nullable=True)  # Client IP address
+    
+    # Session lifecycle
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_accessed = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False)  # Session expiration
+    is_active = Column(Boolean, default=True, index=True)
+    
+    # Relationships
+    user = relationship("UserModel", back_populates="sessions")

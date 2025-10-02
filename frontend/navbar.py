@@ -26,7 +26,10 @@ def render_navbar(title: str, breadcrumbs: Optional[List[str]] = None):
                 st.caption("")
                 st.markdown(f"### {title}")
         with right:
-            if st.session_state.get("jwt"):
+            # Check if user is authenticated (session-based or token-based)
+            is_authenticated = st.session_state.get("jwt") or st.session_state.get("session_id")
+            
+            if is_authenticated:
                 # Fetch email once if not set
                 if not st.session_state.get("user_email"):
                     try:
@@ -55,12 +58,8 @@ def render_navbar(title: str, breadcrumbs: Optional[List[str]] = None):
                             st.session_state["unread_count"] = 0
                 with cols[2]:
                     if st.button("Log Out", key="navbar_logout"):
-                        st.session_state["jwt"] = None
-                        st.session_state["refresh_token"] = None
-                        st.session_state["user_email"] = None
-                        st.session_state["name"] = None
-                        push_notification("Logged out successfully.", "success")
-                        st.markdown(f'<meta http-equiv="refresh" content="0;url={FRONTEND_URL}">', unsafe_allow_html=True)
+                        from auth_utils import logout
+                        logout()
             else:
                 c1, c2 = st.columns(2)
                 with c1:

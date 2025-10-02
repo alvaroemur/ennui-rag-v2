@@ -241,3 +241,35 @@ class ProgramConfigurationResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+# Session schemas
+class SessionCreate(BaseModel):
+    access_token: str
+    refresh_token: str
+    user_agent: Optional[str] = None
+    ip_address: Optional[str] = None
+    expires_at: datetime
+
+
+class SessionResponse(BaseModel):
+    session_id: str
+    user_id: int
+    access_token: str
+    refresh_token: str
+    user_agent: Optional[str]
+    ip_address: Optional[str]
+    created_at: datetime
+    last_accessed: datetime
+    expires_at: datetime
+    is_active: bool
+
+    class Config:
+        orm_mode = True
+
+
+class SessionValidationResponse(BaseModel):
+    valid: bool
+    user_email: Optional[str] = None
+    access_token: Optional[str] = None
+    message: Optional[str] = None

@@ -1,9 +1,54 @@
 """
-Utilidades de autenticación para manejar tokens JWT
+Utilidades de autenticación para manejar tokens JWT y sesiones
 """
 import requests
 import streamlit as st
 from config import API_BASE_URL_INTERNAL
+
+
+def validate_session():
+    """Valida una sesión del servidor y actualiza los tokens si es válida"""
+    if not st.session_state.get("session_id"):
+        st.write(f"DEBUG: No session_id found in session_state")
+        return False
+
+    try:
+        payload = {
+            "session_id": st.session_state["session_id"]
+        }
+        st.write(f"DEBUG: Validating session with payload: {payload}")
+        response = requests.post(
+            f"{API_BASE_URL_INTERNAL}/auth/validate-session",
+            json=payload,
+            timeout=10
+        )
+        
+        st.write(f"DEBUG: Response status: {response.status_code}")
+        st.write(f"DEBUG: Response data: {response.json()}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("valid"):
+                # Actualizar tokens en session state
+                st.session_state["jwt"] = data.get("access_token")
+                st.write(f"DEBUG: Session validated successfully, JWT set")
+                return True
+            else:
+                # Sesión inválida, limpiar
+                st.write(f"DEBUG: Session invalid, clearing session state")
+                st.session_state["session_id"] = None
+                st.session_state["jwt"] = None
+                st.session_state["name"] = None
+                return False
+    except Exception as e:
+        # En caso de error, limpiar sesión
+        st.write(f"DEBUG: Exception during session validation: {e}")
+        st.session_state["session_id"] = None
+        st.session_state["jwt"] = None
+        st.session_state["name"] = None
+        return False
+    
+    return False
 
 
 def refresh_jwt_token():
@@ -33,28 +78,75 @@ def refresh_jwt_token():
     return False
 
 
+def logout():
+    """Cierra la sesión del usuario"""
+    if st.session_state.get("session_id"):
+        try:
+            payload = {
+                "session_id": st.session_state["session_id"]
+            }
+            requests.post(
+                f"{API_BASE_URL_INTERNAL}/auth/logout",
+                json=payload,
+                timeout=10
+            )
+        except Exception:
+            pass
+    
+    # Limpiar session state
+    st.session_state["session_id"] = None
+    st.session_state["jwt"] = None
+    st.session_state["refresh_token"] = None
+    st.session_state["name"] = None
+    st.rerun()
+
+
 def make_authenticated_request(method, url, **kwargs):
     """Hace una petición autenticada y maneja la renovación automática de tokens"""
     headers = kwargs.get("headers", {})
-    headers["Authorization"] = f"Bearer {st.session_state['jwt']}"
-    kwargs["headers"] = headers
+    
+    # Para session-based auth, validar sesión primero
+    if st.session_state.get("session_id") and not st.session_state.get("jwt"):
+        if not validate_session():
+            # Sesión inválida, redirigir a login
+            st.session_state["session_id"] = None
+            st.session_state["jwt"] = None
+            st.session_state["name"] = None
+            st.rerun()
+    
+    # Usar JWT token para autenticación
+    if st.session_state.get("jwt"):
+        headers["Authorization"] = f"Bearer {st.session_state['jwt']}"
+        kwargs["headers"] = headers
     
     try:
         response = requests.request(method, url, **kwargs)
         
         # Si el token expiró (401), intentar refrescar
         if response.status_code == 401:
-            if refresh_jwt_token():
-                # Reintentar la petición con el nuevo token
-                headers["Authorization"] = f"Bearer {st.session_state['jwt']}"
-                kwargs["headers"] = headers
-                response = requests.request(method, url, **kwargs)
-            else:
-                # Si no se puede refrescar, limpiar la sesión
-                st.session_state["jwt"] = None
-                st.session_state["refresh_token"] = None
-                st.session_state["name"] = None
-                st.rerun()
+            if st.session_state.get("session_id"):
+                # Para session-based auth, validar sesión
+                if validate_session():
+                    # Reintentar la petición con el nuevo token
+                    headers["Authorization"] = f"Bearer {st.session_state['jwt']}"
+                    kwargs["headers"] = headers
+                    response = requests.request(method, url, **kwargs)
+                else:
+                    # Sesión inválida, limpiar
+                    logout()
+            elif st.session_state.get("refresh_token"):
+                # Para token-based auth, intentar refresh
+                if refresh_jwt_token():
+                    # Reintentar la petición con el nuevo token
+                    headers["Authorization"] = f"Bearer {st.session_state['jwt']}"
+                    kwargs["headers"] = headers
+                    response = requests.request(method, url, **kwargs)
+                else:
+                    # No se puede refrescar, limpiar la sesión
+                    st.session_state["jwt"] = None
+                    st.session_state["refresh_token"] = None
+                    st.session_state["name"] = None
+                    st.rerun()
         
         return response
     except Exception as e:

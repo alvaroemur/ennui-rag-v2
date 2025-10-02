@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 from authlib.integrations.starlette_client import OAuth
 from authlib.integrations.starlette_client import OAuthError
@@ -13,7 +13,9 @@ from starlette.responses import HTMLResponse, RedirectResponse
 from apps.jwt import create_refresh_token, create_access_token, create_token, CREDENTIALS_EXCEPTION, decode_token, valid_email_from_db, add_email_to_db
 from sqlalchemy.orm import Session
 from database.database import get_db
-from database.crud import upsert_user_tokens
+from database.crud import upsert_user_tokens, create_user_session, get_user_by_email
+from database.schemas import SessionCreate
+from datetime import timedelta
 
 # Create the auth app
 auth_app = FastAPI()
@@ -89,8 +91,23 @@ async def auth(request: Request):
         access_token = create_token(user_data['email'])
         refresh_token = create_refresh_token(user_data['email'])
 
-        # Redirect to Streamlit with the tokens in query parameters
-        redirect_url = f"{FRONTEND_URL}/?" + get_response(access_token, refresh_token, user_data['name'])
+        # Create server-side session
+        user = get_user_by_email(db, user_data['email'])
+        if user:
+            # Session expires in 30 days
+            session_expires = datetime.now(timezone.utc) + timedelta(days=30)
+            session_data = SessionCreate(
+                access_token=access_token,
+                refresh_token=refresh_token,
+                expires_at=session_expires
+            )
+            session = create_user_session(db, user_id=user.id, session_data=session_data)
+            
+            # Redirect to Streamlit with session ID instead of tokens
+            redirect_url = f"{FRONTEND_URL}/?session_id={session.session_id}&name={user_data['name']}"
+        else:
+            # Fallback to token-based redirect if user not found
+            redirect_url = f"{FRONTEND_URL}/?" + get_response(access_token, refresh_token, user_data['name'])
     else:
         # If email is not valid, redirect to the signup page with the email in query parameters
         redirect_url = f"{FRONTEND_URL}/?state=signup&email={user_data['email']}&name={user_data['name']}"
@@ -137,7 +154,25 @@ async def add(request: Request):
 
     access_token = create_token(user_data['email'])
     refresh_token = create_refresh_token(user_data['email'])
-    redirect_url = f"{FRONTEND_URL}/?" + get_response(access_token, refresh_token, user_data['name'])
+    
+    # Create server-side session for new user
+    user = get_user_by_email(db, user_data['email'])
+    if user:
+        # Session expires in 30 days
+        session_expires = datetime.now(timezone.utc) + timedelta(days=30)
+        session_data = SessionCreate(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            expires_at=session_expires
+        )
+        session = create_user_session(db, user_id=user.id, session_data=session_data)
+        
+        # Redirect to Streamlit with session ID instead of tokens
+        redirect_url = f"{FRONTEND_URL}/?session_id={session.session_id}&name={user_data['name']}"
+    else:
+        # Fallback to token-based redirect if user not found
+        redirect_url = f"{FRONTEND_URL}/?" + get_response(access_token, refresh_token, user_data['name'])
+    
     print(f'Redirecting to: {redirect_url}')
     return RedirectResponse(url=redirect_url)
 
@@ -154,7 +189,7 @@ async def refresh(request: Request):
                 token = form.get('refresh_token')
                 payload = decode_token(token)
                 # Check if token is not expired
-                if datetime.utcfromtimestamp(payload.get('exp')) > datetime.utcnow():
+                if datetime.fromtimestamp(payload.get('exp'), tz=timezone.utc) > datetime.now(timezone.utc):
                     email = payload.get('sub')
                     # Validate email
                     if valid_email_from_db(email):
@@ -164,3 +199,72 @@ async def refresh(request: Request):
     except Exception:
         raise CREDENTIALS_EXCEPTION
     raise CREDENTIALS_EXCEPTION
+
+
+@auth_app.post('/validate-session')
+async def validate_session(request: Request):
+    """Validate a session and return user info"""
+    try:
+        form = await request.json()
+        session_id = form.get('session_id')
+        
+        print(f"DEBUG: validate_session called with session_id: {session_id}")
+        
+        if not session_id:
+            print(f"DEBUG: No session_id provided")
+            return JSONResponse({'valid': False, 'message': 'Session ID required'})
+        
+        db: Session = next(get_db())
+        try:
+            from database.crud import validate_session as validate_session_crud
+            print(f"DEBUG: Calling validate_session_crud with session_id: {session_id}")
+            validation_result = validate_session_crud(db, session_id)
+            print(f"DEBUG: Validation result: {validation_result}")
+            
+            if validation_result.valid:
+                print(f"DEBUG: Session is valid, returning success")
+                return JSONResponse({
+                    'valid': True,
+                    'user_email': validation_result.user_email,
+                    'access_token': validation_result.access_token
+                })
+            else:
+                print(f"DEBUG: Session is invalid: {validation_result.message}")
+                return JSONResponse({
+                    'valid': False,
+                    'message': validation_result.message
+                })
+        finally:
+            db.close()
+            
+    except Exception as e:
+        print(f"DEBUG: Exception in validate_session: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({'valid': False, 'message': f'Invalid request: {str(e)}'})
+
+
+@auth_app.post('/logout')
+async def logout(request: Request):
+    """Logout and deactivate session"""
+    try:
+        form = await request.json()
+        session_id = form.get('session_id')
+        
+        if not session_id:
+            return JSONResponse({'success': False, 'message': 'Session ID required'})
+        
+        db: Session = next(get_db())
+        try:
+            from database.crud import deactivate_session
+            success = deactivate_session(db, session_id)
+            
+            if success:
+                return JSONResponse({'success': True, 'message': 'Logged out successfully'})
+            else:
+                return JSONResponse({'success': False, 'message': 'Session not found'})
+        finally:
+            db.close()
+            
+    except Exception as e:
+        return JSONResponse({'success': False, 'message': 'Logout failed'})
