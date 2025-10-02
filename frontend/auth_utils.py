@@ -156,3 +156,15 @@ def make_authenticated_request(method, url, **kwargs):
         
         return MockResponse()
 
+
+def get_auth_headers():
+    """Obtiene los headers de autenticación para las peticiones a la API"""
+    jwt_token = st.session_state.get("jwt")
+    if not jwt_token:
+        return {}
+    
+    return {
+        "Authorization": f"Bearer {jwt_token}",
+        "Content-Type": "application/json"
+    }
+

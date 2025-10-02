@@ -1,11 +1,11 @@
 """
-Sidebar de Retrieval del programa - VERSIÓN SIMPLIFICADA
+Sidebar de Retrieval del programa - VERSIÓN MEJORADA CON MONITOREO
 """
 import streamlit as st
 import requests
 import pandas as pd
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from config import API_BASE_URL_INTERNAL
 from auth_utils import make_authenticated_request
 
@@ -29,13 +29,16 @@ def render_retrieval_screen():
     st.markdown("## 🔍 Retrieval del Programa")
     st.markdown("Sistema de recuperación de información")
     
+    # Verificar estado del backend
+    render_backend_health_check()
+    
     # Obtener datos del programa y estado de indexación
     program_data = get_program_data(selected_program_id)
     indexing_status = get_indexing_status(selected_program_id)
     file_stats = get_file_stats(selected_program_id)
     
-    # Estado del Repositorio
-    st.markdown("### Estado del Repositorio")
+    # Estado del sistema
+    st.markdown("### Estado del Sistema")
     col1, col2, col3, col4 = st.columns(4)
     
     # Nivel de recuperación con estados dinámicos
@@ -54,11 +57,156 @@ def render_retrieval_screen():
     with col4:
         st.metric("Tiempo Promedio", "0.3s", "-0.1s")  # Placeholder
     
+    # Monitoreo detallado del estado de indexación
+    render_indexing_status_details(selected_program_id, indexing_status, file_stats)
+    
     # Botones de indexación
     render_indexing_buttons(selected_program_id, indexing_status, file_stats)
     
+    # Última actualización
+    last_update = get_last_update_time(indexing_status, file_stats)
+    if last_update:
+        st.success(f"✅ Sistema activo - Última actualización: {last_update}")
+    else:
+        st.info("ℹ️ Sistema listo para indexación")
+    
     # Visualización del dataframe del repositorio
     render_repository_dataframe(selected_program_id, file_stats)
+
+
+def check_backend_health():
+    """Verifica si el backend está funcionando"""
+    try:
+        resp = make_authenticated_request("GET", f"{API_BASE_URL_INTERNAL}/", timeout=5)
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def render_backend_health_check():
+    """Renderiza el estado de salud del servicio"""
+    st.markdown("#### Estado del Servicio Backend")
+    
+    if check_backend_health():
+        st.success("✅ Backend funcionando correctamente")
+    else:
+        st.error("❌ Backend no disponible")
+        st.warning("Verifica que el servicio backend esté ejecutándose en el puerto 7000")
+        
+        # Instrucciones para verificar el servicio
+        st.markdown("**Para verificar el servicio manualmente:**")
+        st.code("""
+# Verificar contenedores Docker
+docker-compose ps
+
+# Ver logs del backend
+docker-compose logs backend
+
+# Verificar puerto
+curl http://localhost:7000/
+        """)
+        
+        if st.button("🔄 Verificar nuevamente"):
+            st.rerun()
+
+
+def render_indexing_status_details(program_id, indexing_status, file_stats):
+    """Renderiza detalles del estado de indexación"""
+    st.markdown("#### Estado del Servicio de Indexación")
+    
+    if indexing_status:
+        status = indexing_status.get("status", "unknown")
+        progress = indexing_status.get("progress", {})
+        
+        # Mostrar estado actual
+        if status == "running":
+            st.info("🔄 **Indexación en progreso**")
+            render_indexing_progress(indexing_status)
+        elif status == "completed":
+            st.success("✅ **Indexación completada**")
+        elif status == "failed":
+            st.error("❌ **Indexación falló**")
+        elif status == "pending":
+            st.warning("⏳ **Indexación pendiente**")
+        else:
+            st.info(f"ℹ️ **Estado: {status}**")
+        
+        # Mostrar progreso si está disponible
+        if progress:
+            total = progress.get("total_files", 0)
+            processed = progress.get("processed_files", 0)
+            successful = progress.get("successful_files", 0)
+            failed = progress.get("failed_files", 0)
+            
+            if total > 0:
+                progress_percent = (processed / total) * 100
+                st.progress(progress_percent / 100)
+                st.caption(f"Progreso: {processed}/{total} archivos ({progress_percent:.1f}%)")
+                
+                # Métricas detalladas
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total archivos", total)
+                with col2:
+                    st.metric("Procesados", processed)
+                with col3:
+                    st.metric("Exitosos", successful)
+                with col4:
+                    st.metric("Fallidos", failed)
+        
+        # Mostrar timestamps
+        if indexing_status.get("started_at"):
+            st.caption(f"🕐 Iniciado: {indexing_status['started_at']}")
+        if indexing_status.get("completed_at"):
+            st.caption(f"✅ Completado: {indexing_status['completed_at']}")
+        if indexing_status.get("error_message"):
+            st.error(f"❌ Error: {indexing_status['error_message']}")
+    
+    else:
+        st.info("ℹ️ No hay trabajos de indexación activos")
+    
+    # Botón para refrescar estado
+    if st.button("🔄 Refrescar estado", key="refresh_indexing_status"):
+        st.rerun()
+
+
+def render_indexing_progress(indexing_status):
+    """Renderiza el progreso de indexación en tiempo real"""
+    st.markdown("#### Progreso de Indexación")
+    
+    progress = indexing_status.get("progress", {})
+    total = progress.get("total_files", 0)
+    processed = progress.get("processed_files", 0)
+    successful = progress.get("successful_files", 0)
+    failed = progress.get("failed_files", 0)
+    
+    if total > 0:
+        progress_percent = (processed / total) * 100
+        
+        # Barra de progreso principal
+        st.progress(progress_percent / 100)
+        st.caption(f"Procesando archivos: {processed}/{total} ({progress_percent:.1f}%)")
+        
+        # Métricas en tiempo real
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total", total)
+        with col2:
+            st.metric("Procesados", processed, f"+{processed}")
+        with col3:
+            st.metric("Exitosos", successful, f"+{successful}")
+        with col4:
+            st.metric("Fallidos", failed, f"+{failed}")
+        
+        # Auto-refresh cada 5 segundos si está indexando
+        if indexing_status.get("status") == "running":
+            st.markdown("🔄 Actualizando automáticamente...")
+            time.sleep(5)
+            st.rerun()
+    else:
+        st.info("⏳ Preparando indexación...")
+        time.sleep(2)
+        st.rerun()
 
 
 def get_program_data(program_id):
@@ -112,6 +260,15 @@ def get_recovery_level(indexing_status, file_stats):
         return "Carpeta validada"
 
 
+def get_last_update_time(indexing_status, file_stats):
+    """Obtiene el tiempo de la última actualización"""
+    if indexing_status and indexing_status.get("completed_at"):
+        return f"hace {datetime.now().hour - 2} horas"  # Placeholder
+    elif file_stats and file_stats.get("last_updated"):
+        return f"hace {datetime.now().hour - 1} horas"  # Placeholder
+    return None
+
+
 def render_indexing_buttons(program_id, indexing_status, file_stats):
     """Renderiza los botones de indexación según el estado"""
     st.markdown("### Acciones de Indexación")
@@ -127,18 +284,16 @@ def render_indexing_buttons(program_id, indexing_status, file_stats):
     
     if is_indexing:
         # Mostrar progreso de indexación
-        st.info("🔄 **Indexación en progreso**")
-        
-        # Botón para actualizar
-        if st.button("🔄 Actualizar estado", key="force_refresh"):
-            st.rerun()
+        st.info("🔄 **Indexación en progreso - Los botones están deshabilitados**")
     elif not is_indexed:
         # Estado inicial - solo botón de iniciar indexación
-        if st.button("🚀 Iniciar indexación", type="primary", use_container_width=True):
-            start_indexing(program_id)
+        col1, col2, col3 = st.columns([1, 2, 2])
+        with col1:
+            if st.button("🚀 Iniciar indexación", type="primary", use_container_width=True):
+                start_indexing(program_id)
     else:
         # Ya indexado - botones de reindexar y enriquecimiento
-        col1, col2 = st.columns([1, 1])
+        col1, col2, col3 = st.columns([1, 1, 1])
         with col1:
             if st.button("🔄 Reindexar", use_container_width=True):
                 start_indexing(program_id)

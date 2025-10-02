@@ -10,12 +10,14 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import JSONResponse
 from starlette.responses import HTMLResponse, RedirectResponse
 
-from apps.jwt import create_refresh_token, create_access_token, create_token, CREDENTIALS_EXCEPTION, decode_token, valid_email_from_db, add_email_to_db
+from apps.jwt import create_refresh_token, create_access_token, create_token, CREDENTIALS_EXCEPTION, decode_token, valid_email_from_db, add_email_to_db, get_current_user_email
 from sqlalchemy.orm import Session
 from database.database import get_db
 from database.crud import upsert_user_tokens, create_user_session, get_user_by_email
 from database.schemas import SessionCreate
+from database.models import UserModel
 from datetime import timedelta
+from fastapi import Depends, HTTPException
 
 # Create the auth app
 auth_app = FastAPI()
@@ -268,3 +270,11 @@ async def logout(request: Request):
             
     except Exception as e:
         return JSONResponse({'success': False, 'message': 'Logout failed'})
+
+
+def get_current_user(current_email: str = Depends(get_current_user_email), db: Session = Depends(get_db)) -> UserModel:
+    """Get current user from JWT token"""
+    user = get_user_by_email(db, current_email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user

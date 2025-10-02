@@ -1,11 +1,10 @@
 """
-Sidebar de Retrieval del programa - VERSIÓN SIMPLIFICADA
+Sidebar de Retrieval del programa
 """
 import streamlit as st
 import requests
 import pandas as pd
-import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from config import API_BASE_URL_INTERNAL
 from auth_utils import make_authenticated_request
 
@@ -34,8 +33,8 @@ def render_retrieval_screen():
     indexing_status = get_indexing_status(selected_program_id)
     file_stats = get_file_stats(selected_program_id)
     
-    # Estado del Repositorio
-    st.markdown("### Estado del Repositorio")
+    # Estado del sistema
+    st.markdown("### Estado del Sistema")
     col1, col2, col3, col4 = st.columns(4)
     
     # Nivel de recuperación con estados dinámicos
@@ -56,6 +55,13 @@ def render_retrieval_screen():
     
     # Botones de indexación
     render_indexing_buttons(selected_program_id, indexing_status, file_stats)
+    
+    # Última actualización
+    last_update = get_last_update_time(indexing_status, file_stats)
+    if last_update:
+        st.success(f"✅ Sistema activo - Última actualización: {last_update}")
+    else:
+        st.info("ℹ️ Sistema listo para indexación")
     
     # Visualización del dataframe del repositorio
     render_repository_dataframe(selected_program_id, file_stats)
@@ -112,6 +118,15 @@ def get_recovery_level(indexing_status, file_stats):
         return "Carpeta validada"
 
 
+def get_last_update_time(indexing_status, file_stats):
+    """Obtiene el tiempo de la última actualización"""
+    if indexing_status and indexing_status.get("completed_at"):
+        return f"hace {datetime.now().hour - 2} horas"  # Placeholder
+    elif file_stats and file_stats.get("last_updated"):
+        return f"hace {datetime.now().hour - 1} horas"  # Placeholder
+    return None
+
+
 def render_indexing_buttons(program_id, indexing_status, file_stats):
     """Renderiza los botones de indexación según el estado"""
     st.markdown("### Acciones de Indexación")
@@ -122,23 +137,15 @@ def render_indexing_buttons(program_id, indexing_status, file_stats):
         (file_stats and file_stats.get("completed_files", 0) > 0)
     )
     
-    # Determinar si está indexando actualmente
-    is_indexing = indexing_status and indexing_status.get("status") == "running"
-    
-    if is_indexing:
-        # Mostrar progreso de indexación
-        st.info("🔄 **Indexación en progreso**")
-        
-        # Botón para actualizar
-        if st.button("🔄 Actualizar estado", key="force_refresh"):
-            st.rerun()
-    elif not is_indexed:
+    if not is_indexed:
         # Estado inicial - solo botón de iniciar indexación
-        if st.button("🚀 Iniciar indexación", type="primary", use_container_width=True):
-            start_indexing(program_id)
+        col1, col2, col3 = st.columns([1, 2, 2])
+        with col1:
+            if st.button("🚀 Iniciar indexación", type="primary", use_container_width=True):
+                start_indexing(program_id)
     else:
         # Ya indexado - botones de reindexar y enriquecimiento
-        col1, col2 = st.columns([1, 1])
+        col1, col2, col3 = st.columns([1, 1, 1])
         with col1:
             if st.button("🔄 Reindexar", use_container_width=True):
                 start_indexing(program_id)

@@ -1,7 +1,7 @@
 from pydantic import BaseModel, PositiveFloat, EmailStr, validator, Field
 from enum import Enum
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 import json
 
 
@@ -273,3 +273,112 @@ class SessionValidationResponse(BaseModel):
     user_email: Optional[str] = None
     access_token: Optional[str] = None
     message: Optional[str] = None
+
+
+# Indexed File Schemas
+class IndexedFileBase(BaseModel):
+    drive_file_id: str
+    drive_file_name: str
+    drive_file_path: Optional[str] = None
+    mime_type: str
+    file_type: str
+    file_size: int = 0
+    web_view_link: Optional[str] = None
+    is_google_doc: bool = False
+    is_downloadable: bool = True
+
+class IndexedFileCreate(IndexedFileBase):
+    content_text: Optional[str] = None
+    content_hash: Optional[str] = None
+
+class IndexedFileUpdate(BaseModel):
+    content_text: Optional[str] = None
+    content_hash: Optional[str] = None
+    indexing_status: Optional[str] = None
+    indexing_error: Optional[str] = None
+    last_indexed_at: Optional[datetime] = None
+
+class IndexedFileResponse(IndexedFileBase):
+    id: int
+    program_id: int
+    content_text: Optional[str] = None
+    content_hash: Optional[str] = None
+    indexing_status: str
+    indexing_error: Optional[str] = None
+    last_indexed_at: Optional[datetime] = None
+    drive_created_time: Optional[datetime] = None
+    drive_modified_time: Optional[datetime] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
+
+
+# Indexing Job Schemas
+class IndexingJobBase(BaseModel):
+    job_type: str
+    folder_id: Optional[str] = None
+
+class IndexingJobCreate(IndexingJobBase):
+    pass
+
+class IndexingJobUpdate(BaseModel):
+    status: Optional[str] = None
+    total_files: Optional[int] = None
+    processed_files: Optional[int] = None
+    successful_files: Optional[int] = None
+    failed_files: Optional[int] = None
+    error_message: Optional[str] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+class IndexingJobResponse(IndexingJobBase):
+    id: int
+    program_id: int
+    user_id: int
+    status: str
+    total_files: int
+    processed_files: int
+    successful_files: int
+    failed_files: int
+    error_message: Optional[str] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
+
+
+# Google Drive Retrieval Schemas
+class DriveScanRequest(BaseModel):
+    program_id: int
+    folder_id: Optional[str] = None
+    include_trashed: bool = False
+    job_type: str = "full_scan"  # full_scan, incremental, specific_folder
+
+class DriveScanResponse(BaseModel):
+    job_id: int
+    message: str
+    status: str
+
+class IndexingStatusResponse(BaseModel):
+    job_id: int
+    status: str
+    progress: Dict[str, int]  # total_files, processed_files, successful_files, failed_files
+    error_message: Optional[str] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+class FileSearchRequest(BaseModel):
+    program_id: int
+    query: str
+    file_types: Optional[List[str]] = None
+    limit: int = 50
+
+class FileSearchResponse(BaseModel):
+    files: List[IndexedFileResponse]
+    total_count: int
+    query: str

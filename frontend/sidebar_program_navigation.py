@@ -35,7 +35,7 @@ def render_program_navigation_sidebar():
             st.divider()
             
             # Bloque: Carpeta
-            st.markdown("#### 📁 Carpeta")
+            st.markdown("#### 📁 Repositorio")
             
             # Botón: Retrieval
             if st.button("🔍 Retrieval", key="sidebar_retrieval", use_container_width=True):
@@ -45,6 +45,11 @@ def render_program_navigation_sidebar():
             # Botón: Search
             if st.button("🔎 Search", key="sidebar_search", use_container_width=True):
                 st.session_state["view"] = "search"
+                st.rerun()
+
+            # Botón: TTF
+            if st.button("Talk To File", key="sidebar_ttf", use_container_width=True):
+                st.session_state["view"] = "ttf"
                 st.rerun()
             
             st.divider()

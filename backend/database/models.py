@@ -18,6 +18,7 @@ class UserModel(Base):
     program_access = relationship("ProgramAccess", back_populates="user")
     created_programs = relationship("Program", back_populates="created_by_user")
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
+    indexing_jobs = relationship("IndexingJob", back_populates="user", cascade="all, delete-orphan")
 
 class PostModel(Base):
     __tablename__ = "post"
@@ -56,6 +57,8 @@ class Program(Base):
     permission_requests = relationship("PermissionRequest", back_populates="program", cascade="all, delete-orphan")
     scope = relationship("ProgramScope", back_populates="program", uselist=False, cascade="all, delete-orphan")
     theory_of_change = relationship("TheoryOfChange", back_populates="program", uselist=False, cascade="all, delete-orphan")
+    indexed_files = relationship("IndexedFile", back_populates="program", cascade="all, delete-orphan")
+    indexing_jobs = relationship("IndexingJob", back_populates="program", cascade="all, delete-orphan")
 
 
 class ProgramAccess(Base):
@@ -230,3 +233,73 @@ class UserSession(Base):
     
     # Relationships
     user = relationship("UserModel", back_populates="sessions")
+
+
+class IndexedFile(Base):
+    """Model for indexed Google Drive files"""
+    __tablename__ = "indexed_files"
+    id = Column(Integer, primary_key=True, index=True)
+    program_id = Column(Integer, ForeignKey("programs.id"), nullable=False, index=True)
+    
+    # Google Drive file information
+    drive_file_id = Column(String, unique=True, index=True, nullable=False)
+    drive_file_name = Column(String, nullable=False)
+    drive_file_path = Column(String, nullable=True)  # Full path in Drive
+    mime_type = Column(String, nullable=False)
+    file_type = Column(String, nullable=False)
+    file_size = Column(Integer, default=0)
+    web_view_link = Column(String, nullable=True)
+    
+    # Content information
+    content_text = Column(Text, nullable=True)  # Extracted text content
+    content_hash = Column(String, nullable=True)  # Hash of content for change detection
+    is_google_doc = Column(Boolean, default=False)
+    is_downloadable = Column(Boolean, default=True)
+    
+    # Indexing status
+    indexing_status = Column(String, default="pending", index=True)  # pending, processing, completed, failed
+    indexing_error = Column(String, nullable=True)
+    last_indexed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Google Drive timestamps
+    drive_created_time = Column(DateTime(timezone=True), nullable=True)
+    drive_modified_time = Column(DateTime(timezone=True), nullable=True)
+    
+    # Audit
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    program = relationship("Program", back_populates="indexed_files")
+
+
+class IndexingJob(Base):
+    """Model for tracking indexing jobs"""
+    __tablename__ = "indexing_jobs"
+    id = Column(Integer, primary_key=True, index=True)
+    program_id = Column(Integer, ForeignKey("programs.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    # Job details
+    job_type = Column(String, nullable=False)  # full_scan, incremental, specific_folder
+    folder_id = Column(String, nullable=True)  # Specific folder ID if applicable
+    status = Column(String, default="pending", index=True)  # pending, running, completed, failed, cancelled
+    
+    # Progress tracking
+    total_files = Column(Integer, default=0)
+    processed_files = Column(Integer, default=0)
+    successful_files = Column(Integer, default=0)
+    failed_files = Column(Integer, default=0)
+    
+    # Job metadata
+    error_message = Column(Text, nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Audit
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    program = relationship("Program", back_populates="indexing_jobs")
+    user = relationship("UserModel", back_populates="indexing_jobs")
