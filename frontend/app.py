@@ -32,15 +32,10 @@ is_authenticated = False
 if st.session_state.get("session_id"):
     # Session-based authentication
     from auth_utils import validate_session
-    st.write(f"DEBUG: Attempting session-based authentication")
     if validate_session():
         is_authenticated = True
-        st.write(f"DEBUG: Session-based authentication successful")
-    else:
-        st.write(f"DEBUG: Session-based authentication failed")
 elif st.session_state.get("jwt"):
     # Legacy token-based authentication
-    st.write(f"DEBUG: Using legacy token-based authentication")
     is_authenticated = True
 
 

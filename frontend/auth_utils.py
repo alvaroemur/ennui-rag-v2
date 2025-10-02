@@ -9,40 +9,32 @@ from config import API_BASE_URL_INTERNAL
 def validate_session():
     """Valida una sesión del servidor y actualiza los tokens si es válida"""
     if not st.session_state.get("session_id"):
-        st.write(f"DEBUG: No session_id found in session_state")
         return False
 
     try:
         payload = {
             "session_id": st.session_state["session_id"]
         }
-        st.write(f"DEBUG: Validating session with payload: {payload}")
         response = requests.post(
             f"{API_BASE_URL_INTERNAL}/auth/validate-session",
             json=payload,
             timeout=10
         )
         
-        st.write(f"DEBUG: Response status: {response.status_code}")
-        st.write(f"DEBUG: Response data: {response.json()}")
-        
         if response.status_code == 200:
             data = response.json()
             if data.get("valid"):
                 # Actualizar tokens en session state
                 st.session_state["jwt"] = data.get("access_token")
-                st.write(f"DEBUG: Session validated successfully, JWT set")
                 return True
             else:
                 # Sesión inválida, limpiar
-                st.write(f"DEBUG: Session invalid, clearing session state")
                 st.session_state["session_id"] = None
                 st.session_state["jwt"] = None
                 st.session_state["name"] = None
                 return False
     except Exception as e:
         # En caso de error, limpiar sesión
-        st.write(f"DEBUG: Exception during session validation: {e}")
         st.session_state["session_id"] = None
         st.session_state["jwt"] = None
         st.session_state["name"] = None
