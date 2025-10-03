@@ -57,7 +57,7 @@ class Program(Base):
     permission_requests = relationship("PermissionRequest", back_populates="program", cascade="all, delete-orphan")
     scope = relationship("ProgramScope", back_populates="program", uselist=False, cascade="all, delete-orphan")
     theory_of_change = relationship("TheoryOfChange", back_populates="program", uselist=False, cascade="all, delete-orphan")
-    indexed_files = relationship("IndexedFile", back_populates="program", cascade="all, delete-orphan")
+    # indexed_files relationship removed - now using drive_folder_id instead of program_id
     indexing_jobs = relationship("IndexingJob", back_populates="program", cascade="all, delete-orphan")
 
 
@@ -239,22 +239,34 @@ class IndexedFile(Base):
     """Model for indexed Google Drive files"""
     __tablename__ = "indexed_files"
     id = Column(Integer, primary_key=True, index=True)
-    program_id = Column(Integer, ForeignKey("programs.id"), nullable=False, index=True)
+    drive_folder_id = Column(String, nullable=False, index=True)  # Main program folder ID (replaces program_id)
     
     # Google Drive file information
     drive_file_id = Column(String, unique=True, index=True, nullable=False)
     drive_file_name = Column(String, nullable=False)
-    drive_file_path = Column(String, nullable=True)  # Full path in Drive
-    mime_type = Column(String, nullable=False)
     file_type = Column(String, nullable=False)
     file_size = Column(Integer, default=0)
     web_view_link = Column(String, nullable=True)
     
+    # Google API parameters
+    description = Column(Text, nullable=True)
+    parents = Column(Text, nullable=True)  # JSON array of parent folder IDs
+    owners = Column(Text, nullable=True)  # JSON array of owner information
+    last_modifying_user = Column(Text, nullable=True)  # JSON object with user info
+    md5_checksum = Column(String, nullable=True)
+    
     # Content information
     content_text = Column(Text, nullable=True)  # Extracted text content
-    content_hash = Column(String, nullable=True)  # Hash of content for change detection
     is_google_doc = Column(Boolean, default=False)
     is_downloadable = Column(Boolean, default=True)
+    
+    # Enrichment columns (for future AI processing)
+    summary_120w = Column(Text, nullable=True)  # 120-word summary
+    keywords = Column(Text, nullable=True)  # JSON array of keywords
+    topics = Column(Text, nullable=True)  # JSON array of topics
+    sentiment = Column(String, nullable=True)  # positive, negative, neutral
+    language = Column(String, nullable=True)  # detected language
+    document_type = Column(String, nullable=True)  # report, presentation, etc.
     
     # Indexing status
     indexing_status = Column(String, default="pending", index=True)  # pending, processing, completed, failed
@@ -269,8 +281,8 @@ class IndexedFile(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
-    # Relationships
-    program = relationship("Program", back_populates="indexed_files")
+    # Relationships - now using drive_folder_id instead of program_id
+    # We'll need to add a method to get the program from drive_folder_id
 
 
 class IndexingJob(Base):

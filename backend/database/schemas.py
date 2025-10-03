@@ -279,30 +279,49 @@ class SessionValidationResponse(BaseModel):
 class IndexedFileBase(BaseModel):
     drive_file_id: str
     drive_file_name: str
-    drive_file_path: Optional[str] = None
-    mime_type: str
     file_type: str
     file_size: int = 0
     web_view_link: Optional[str] = None
+    description: Optional[str] = None
+    parents: Optional[str] = None  # JSON string
+    owners: Optional[str] = None  # JSON string
+    last_modifying_user: Optional[str] = None  # JSON string
+    md5_checksum: Optional[str] = None
     is_google_doc: bool = False
     is_downloadable: bool = True
 
 class IndexedFileCreate(IndexedFileBase):
+    drive_folder_id: str
     content_text: Optional[str] = None
-    content_hash: Optional[str] = None
+    summary_120w: Optional[str] = None
+    keywords: Optional[str] = None  # JSON string
+    topics: Optional[str] = None  # JSON string
+    sentiment: Optional[str] = None
+    language: Optional[str] = None
+    document_type: Optional[str] = None
 
 class IndexedFileUpdate(BaseModel):
     content_text: Optional[str] = None
-    content_hash: Optional[str] = None
+    summary_120w: Optional[str] = None
+    keywords: Optional[str] = None
+    topics: Optional[str] = None
+    sentiment: Optional[str] = None
+    language: Optional[str] = None
+    document_type: Optional[str] = None
     indexing_status: Optional[str] = None
     indexing_error: Optional[str] = None
     last_indexed_at: Optional[datetime] = None
 
 class IndexedFileResponse(IndexedFileBase):
     id: int
-    program_id: int
+    drive_folder_id: str
     content_text: Optional[str] = None
-    content_hash: Optional[str] = None
+    summary_120w: Optional[str] = None
+    keywords: Optional[str] = None
+    topics: Optional[str] = None
+    sentiment: Optional[str] = None
+    language: Optional[str] = None
+    document_type: Optional[str] = None
     indexing_status: str
     indexing_error: Optional[str] = None
     last_indexed_at: Optional[datetime] = None

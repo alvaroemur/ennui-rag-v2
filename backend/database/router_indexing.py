@@ -199,7 +199,7 @@ async def search_files(
     # Buscar archivos
     indexing_service = IndexingService(db)
     files, total_count = indexing_service.search_files(
-        program_id=request.program_id,
+        drive_folder_id=program.drive_folder_id,
         query=request.query,
         file_types=request.file_types,
         limit=request.limit
@@ -242,7 +242,7 @@ async def get_program_files(
     indexing_service = IndexingService(db)
     file_types_list = file_types.split(",") if file_types else None
     files = indexing_service.get_program_files(
-        program_id=program_id,
+        drive_folder_id=program.drive_folder_id,
         file_types=file_types_list,
         limit=limit
     )

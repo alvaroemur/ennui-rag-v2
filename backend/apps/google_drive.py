@@ -22,6 +22,15 @@ GOOGLE_DOC_TYPES = {
     'application/vnd.google-apps.drawing': 'google_drawing',
 }
 
+# MIME types for folders and shortcuts
+FOLDER_TYPES = {
+    'application/vnd.google-apps.folder': 'folder',
+}
+
+SHORTCUT_TYPES = {
+    'application/vnd.google-apps.shortcut': 'shortcut',
+}
+
 # File extensions mapping
 FILE_EXTENSIONS = {
     'application/pdf': 'pdf',
@@ -90,6 +99,10 @@ class GoogleDriveScanner:
         """Get file type from MIME type"""
         if mime_type in GOOGLE_DOC_TYPES:
             return GOOGLE_DOC_TYPES[mime_type]
+        elif mime_type in FOLDER_TYPES:
+            return FOLDER_TYPES[mime_type]
+        elif mime_type in SHORTCUT_TYPES:
+            return SHORTCUT_TYPES[mime_type]
         elif mime_type in FILE_EXTENSIONS:
             return FILE_EXTENSIONS[mime_type]
         else:
@@ -150,7 +163,7 @@ class GoogleDriveScanner:
         while True:
             params = {
                 "q": query,
-                "fields": "nextPageToken,files(id,name,mimeType,size,modifiedTime,createdTime,parents,trashed,webViewLink)",
+                "fields": "nextPageToken,files(id,name,mimeType,size,modifiedTime,createdTime,parents,trashed,webViewLink,description,owners,lastModifyingUser,md5Checksum)",
                 "pageSize": 1000,
                 "supportsAllDrives": "true",
                 "includeItemsFromAllDrives": "true"
@@ -181,6 +194,10 @@ class GoogleDriveScanner:
                     "parents": file.get("parents", []),
                     "trashed": file.get("trashed", False),
                     "web_view_link": file.get("webViewLink"),
+                    "description": file.get("description"),
+                    "owners": file.get("owners", []),
+                    "last_modifying_user": file.get("lastModifyingUser"),
+                    "md5_checksum": file.get("md5Checksum"),
                     "is_google_doc": self._is_google_doc(file.get("mimeType", "")),
                     "downloadable": self._is_downloadable(file.get("mimeType", ""))
                 }
@@ -261,7 +278,7 @@ async def get_file_metadata(access_token: str, file_id: str) -> Optional[Dict]:
         scanner = GoogleDriveScanner(access_token)
         url = f"{scanner.base_url}/files/{file_id}"
         params = {
-            "fields": "id,name,mimeType,size,modifiedTime,createdTime,parents,trashed,webViewLink",
+            "fields": "id,name,mimeType,size,modifiedTime,createdTime,parents,trashed,webViewLink,description,owners,lastModifyingUser,md5Checksum",
             "supportsAllDrives": "true"
         }
         
@@ -281,6 +298,10 @@ async def get_file_metadata(access_token: str, file_id: str) -> Optional[Dict]:
             "parents": data.get("parents", []),
             "trashed": data.get("trashed", False),
             "web_view_link": data.get("webViewLink"),
+            "description": data.get("description"),
+            "owners": data.get("owners", []),
+            "last_modifying_user": data.get("lastModifyingUser"),
+            "md5_checksum": data.get("md5Checksum"),
             "is_google_doc": scanner._is_google_doc(data.get("mimeType", "")),
             "downloadable": scanner._is_downloadable(data.get("mimeType", ""))
         }

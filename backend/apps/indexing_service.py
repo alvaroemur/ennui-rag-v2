@@ -189,14 +189,13 @@ class IndexingService:
         # Verificar si el archivo ya existe
         existing_file = self.db.query(IndexedFile).filter(
             and_(
-                IndexedFile.program_id == program.id,
+                IndexedFile.drive_folder_id == program.drive_folder_id,
                 IndexedFile.drive_file_id == file_id
             )
         ).first()
         
         # Obtener contenido del archivo
         content_text = None
-        content_hash = None
         
         try:
             if file_data.get("is_google_doc"):
@@ -212,7 +211,6 @@ class IndexingService:
                 content_text = content_bytes.decode('utf-8', errors='ignore')
                 # Sanitizar contenido: remover caracteres NUL y otros caracteres problemáticos
                 content_text = self._sanitize_content(content_text)
-                content_hash = hashlib.md5(content_text.encode()).hexdigest()
         
         except Exception as e:
             logger.warning(f"Could not extract content from file {file_id}: {str(e)}")
@@ -221,36 +219,42 @@ class IndexingService:
         if existing_file:
             # Actualizar archivo existente
             existing_file.drive_file_name = self._sanitize_content(file_data.get("name", ""))
-            existing_file.mime_type = self._sanitize_content(file_data.get("mimeType", ""))
             existing_file.file_type = self._sanitize_content(file_data.get("file_type", ""))
             existing_file.file_size = file_data.get("size", 0)
-            existing_file.web_view_link = self._sanitize_content(file_data.get("webViewLink", ""))
+            existing_file.web_view_link = self._sanitize_content(file_data.get("web_view_link", ""))
+            existing_file.description = self._sanitize_content(file_data.get("description", ""))
+            existing_file.parents = json.dumps(file_data.get("parents", [])) if file_data.get("parents") else None
+            existing_file.owners = json.dumps(file_data.get("owners", [])) if file_data.get("owners") else None
+            existing_file.last_modifying_user = json.dumps(file_data.get("last_modifying_user", {})) if file_data.get("last_modifying_user") else None
+            existing_file.md5_checksum = file_data.get("md5_checksum")
             existing_file.is_google_doc = file_data.get("is_google_doc", False)
             existing_file.is_downloadable = file_data.get("downloadable", True)
             existing_file.content_text = content_text
-            existing_file.content_hash = content_hash
             existing_file.indexing_status = "completed"
             existing_file.last_indexed_at = datetime.utcnow()
-            existing_file.drive_modified_time = self._parse_datetime(file_data.get("modifiedTime"))
+            existing_file.drive_created_time = self._parse_datetime(file_data.get("created_time"))
+            existing_file.drive_modified_time = self._parse_datetime(file_data.get("modified_time"))
         else:
             # Crear nuevo archivo
             indexed_file = IndexedFile(
-                program_id=program.id,
+                drive_folder_id=program.drive_folder_id,
                 drive_file_id=file_id,
                 drive_file_name=self._sanitize_content(file_data.get("name", "")),
-                drive_file_path=self._sanitize_content(file_data.get("path", "")),
-                mime_type=self._sanitize_content(file_data.get("mimeType", "")),
                 file_type=self._sanitize_content(file_data.get("file_type", "")),
                 file_size=file_data.get("size", 0),
-                web_view_link=self._sanitize_content(file_data.get("webViewLink", "")),
+                web_view_link=self._sanitize_content(file_data.get("web_view_link", "")),
+                description=self._sanitize_content(file_data.get("description", "")),
+                parents=json.dumps(file_data.get("parents", [])) if file_data.get("parents") else None,
+                owners=json.dumps(file_data.get("owners", [])) if file_data.get("owners") else None,
+                last_modifying_user=json.dumps(file_data.get("last_modifying_user", {})) if file_data.get("last_modifying_user") else None,
+                md5_checksum=file_data.get("md5_checksum"),
                 content_text=content_text,
-                content_hash=content_hash,
                 is_google_doc=file_data.get("is_google_doc", False),
                 is_downloadable=file_data.get("downloadable", True),
                 indexing_status="completed",
                 last_indexed_at=datetime.utcnow(),
-                drive_created_time=self._parse_datetime(file_data.get("createdTime")),
-                drive_modified_time=self._parse_datetime(file_data.get("modifiedTime"))
+                drive_created_time=self._parse_datetime(file_data.get("created_time")),
+                drive_modified_time=self._parse_datetime(file_data.get("modified_time"))
             )
             self.db.add(indexed_file)
     
@@ -268,21 +272,30 @@ class IndexingService:
             file_data: Datos del archivo
             error_message: Mensaje de error
         """
+        # Obtener el programa para acceder al drive_folder_id
+        program = self.db.query(Program).filter(Program.id == job.program_id).first()
+        if not program:
+            return
+            
         indexed_file = IndexedFile(
-            program_id=job.program_id,
+            drive_folder_id=program.drive_folder_id,
             drive_file_id=self._sanitize_content(file_data.get("id", "")),
             drive_file_name=self._sanitize_content(file_data.get("name", "")),
-            mime_type=self._sanitize_content(file_data.get("mimeType", "")),
             file_type=self._sanitize_content(file_data.get("file_type", "")),
             file_size=file_data.get("size", 0),
-            web_view_link=self._sanitize_content(file_data.get("webViewLink", "")),
+            web_view_link=self._sanitize_content(file_data.get("web_view_link", "")),
+            description=self._sanitize_content(file_data.get("description", "")),
+            parents=json.dumps(file_data.get("parents", [])) if file_data.get("parents") else None,
+            owners=json.dumps(file_data.get("owners", [])) if file_data.get("owners") else None,
+            last_modifying_user=json.dumps(file_data.get("last_modifying_user", {})) if file_data.get("last_modifying_user") else None,
+            md5_checksum=file_data.get("md5_checksum"),
             is_google_doc=file_data.get("is_google_doc", False),
             is_downloadable=file_data.get("downloadable", True),
             indexing_status="failed",
             indexing_error=self._sanitize_content(error_message),
             last_indexed_at=datetime.utcnow(),
-            drive_created_time=self._parse_datetime(file_data.get("createdTime")),
-            drive_modified_time=self._parse_datetime(file_data.get("modifiedTime"))
+            drive_created_time=self._parse_datetime(file_data.get("created_time")),
+            drive_modified_time=self._parse_datetime(file_data.get("modified_time"))
         )
         self.db.add(indexed_file)
     
@@ -364,7 +377,7 @@ class IndexingService:
     
     def search_files(
         self, 
-        program_id: int, 
+        drive_folder_id: str, 
         query: str, 
         file_types: Optional[List[str]] = None,
         limit: int = 50
@@ -373,7 +386,7 @@ class IndexingService:
         Busca archivos indexados en un programa
         
         Args:
-            program_id: ID del programa
+            drive_folder_id: ID de la carpeta principal del programa
             query: Consulta de búsqueda
             file_types: Tipos de archivo a filtrar
             limit: Límite de resultados
@@ -384,7 +397,7 @@ class IndexingService:
         # Construir consulta base
         base_query = self.db.query(IndexedFile).filter(
             and_(
-                IndexedFile.program_id == program_id,
+                IndexedFile.drive_folder_id == drive_folder_id,
                 IndexedFile.indexing_status == "completed",
                 or_(
                     IndexedFile.drive_file_name.ilike(f"%{query}%"),
@@ -407,7 +420,7 @@ class IndexingService:
     
     def get_program_files(
         self, 
-        program_id: int, 
+        drive_folder_id: str, 
         file_types: Optional[List[str]] = None,
         limit: int = 100
     ) -> List[IndexedFile]:
@@ -415,7 +428,7 @@ class IndexingService:
         Obtiene todos los archivos indexados de un programa
         
         Args:
-            program_id: ID del programa
+            drive_folder_id: ID de la carpeta principal del programa
             file_types: Tipos de archivo a filtrar
             limit: Límite de resultados
         
@@ -424,7 +437,7 @@ class IndexingService:
         """
         query = self.db.query(IndexedFile).filter(
             and_(
-                IndexedFile.program_id == program_id,
+                IndexedFile.drive_folder_id == drive_folder_id,
                 IndexedFile.indexing_status == "completed"
             )
         )
