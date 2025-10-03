@@ -12,6 +12,7 @@ from program_tracking import render_program_tracking
 from program_mel import render_dashboard_screen
 from repository_retrieval import render_retrieval_screen
 from repository_search import render_search_screen
+from repository_speak import render_speak_screen
 
 st.set_page_config(layout="wide", page_title="ennui-rag 2.0")
 
@@ -64,6 +65,8 @@ if is_authenticated:
         render_navbar(nav_title, ["Programas", "Homepage", "Retrieval"])
     elif "view" in st.session_state and st.session_state["view"] == "search":
         render_navbar(nav_title, ["Programas", "Homepage", "Search"])
+    elif "view" in st.session_state and st.session_state["view"] == "speak":
+        render_navbar(nav_title, ["Programas", "Homepage", "Speak"])
     elif "view" in st.session_state and st.session_state["view"] == "homepage":
         render_navbar(nav_title, ["Programas", "Homepage"])
     else:
@@ -93,6 +96,8 @@ if is_authenticated:
         render_retrieval_screen()
     elif st.session_state["view"] == "search":
         render_search_screen()
+    elif st.session_state["view"] == "speak":
+        render_speak_screen()
     else:
         # Vista principal (selección de programa)
         render_program_selection()

@@ -8,7 +8,7 @@ def render_program_navigation_sidebar():
     """Renderiza el sidebar de navegación del programa"""
     # Solo mostrar sidebar de navegación en vistas del programa abierto
     current_view = st.session_state.get("view", "")
-    views_with_navigation = ["homepage", "program_config", "tracking", "dashboard", "retrieval", "search"]
+    views_with_navigation = ["homepage", "program_config", "tracking", "dashboard", "retrieval", "search", "speak"]
     
     if (st.session_state.get("jwt") or st.session_state.get("session_id")) and current_view in views_with_navigation:
         with st.sidebar:
@@ -47,9 +47,9 @@ def render_program_navigation_sidebar():
                 st.session_state["view"] = "search"
                 st.rerun()
 
-            # Botón: TTF
-            if st.button("Talk To File", key="sidebar_ttf", use_container_width=True):
-                st.session_state["view"] = "ttf"
+            # Botón: Speak
+            if st.button("🗣️ Speak", key="sidebar_speak", use_container_width=True):
+                st.session_state["view"] = "speak"
                 st.rerun()
             
             st.divider()
