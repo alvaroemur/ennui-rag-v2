@@ -1,8 +1,9 @@
 """
-Servicio de indexación de Google Drive para programas - VERSIÓN CORREGIDA
+Servicio de indexación de Google Drive para programas - VERSIÓN CON JOB QUEUE
 """
 import asyncio
 import hashlib
+import json
 import logging
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
@@ -28,32 +29,57 @@ class IndexingService:
         program_id: int, 
         user_id: int,
         folder_id: Optional[str] = None,
-        job_type: str = "full_scan"
+        job_type: str = "full_scan",
+        priority: int = 0,
+        access_token: Optional[str] = None,
+        include_trashed: bool = False,
+        scheduled_at: Optional[datetime] = None
     ) -> IndexingJob:
         """
-        Crea un trabajo de indexación (sin iniciar el procesamiento)
+        Crea un trabajo de indexación en la cola de trabajos
         
         Args:
             program_id: ID del programa
             user_id: ID del usuario que inicia el trabajo
             folder_id: ID de carpeta específica (opcional)
             job_type: Tipo de trabajo (full_scan, incremental, specific_folder)
+            priority: Prioridad del trabajo (mayor número = mayor prioridad)
+            access_token: Token de acceso de Google (opcional, se obtiene del usuario si no se proporciona)
+            include_trashed: Incluir archivos en papelera
+            scheduled_at: Cuándo procesar el trabajo (opcional, inmediato si no se especifica)
         
         Returns:
             IndexingJob creado
         """
+        # Preparar parámetros del trabajo
+        job_parameters = {
+            "include_trashed": include_trashed
+        }
+        
+        if access_token:
+            job_parameters["access_token"] = access_token
+        
         # Crear trabajo de indexación
         indexing_job = IndexingJob(
             program_id=program_id,
             user_id=user_id,
             job_type=job_type,
             folder_id=folder_id,
-            status="pending"
+            status="pending",
+            priority=priority,
+            scheduled_at=scheduled_at,
+            job_parameters=json.dumps(job_parameters)
         )
         
         self.db.add(indexing_job)
         self.db.commit()
         self.db.refresh(indexing_job)
+        
+        # Get current queue status for logging
+        queue_status = self.get_queue_status()
+        
+        logger.info(f"📝 Created indexing job {indexing_job.id} for program {program_id} (type: {job_type}, priority: {priority})")
+        logger.info(f"📊 Queue status after job creation - Pending: {queue_status['pending_jobs']}, Running: {queue_status['running_jobs']}, Completed: {queue_status['completed_jobs']}, Failed: {queue_status['failed_jobs']}")
         
         return indexing_job
     
@@ -424,57 +450,32 @@ class IndexingService:
         ).order_by(IndexingJob.created_at.desc()).limit(limit).all()
 
 
-# Función para ser usada como background task
-def process_indexing_job_background(
-    job_id: int, 
-    access_token: str, 
-    include_trashed: bool = False
-):
-    """
-    Función para procesar trabajos de indexación en background
-    Esta función será llamada por FastAPI BackgroundTasks
-    """
-    import asyncio
-    from database.database import SessionLocal
-    
-    async def _run_async():
-        """Función asíncrona interna para ejecutar el procesamiento"""
-        db = SessionLocal()
-        try:
-            indexing_service = IndexingService(db)
-            await indexing_service._process_indexing_job(job_id, access_token, include_trashed)
-        except Exception as e:
-            # Hacer rollback en caso de error
-            db.rollback()
-            raise e
-        finally:
-            db.close()
-    
-    # Ejecutar la función asíncrona usando asyncio.run()
-    # Esto es más robusto que crear manualmente un loop de eventos
-    try:
-        asyncio.run(_run_async())
-    except Exception as e:
-        # Log del error para debugging
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"Error in background indexing job {job_id}: {str(e)}")
+    def get_queue_status(self) -> Dict:
+        """
+        Obtiene el estado de la cola de trabajos
         
-        # Intentar actualizar el estado del job a "failed" si es posible
-        try:
-            from datetime import datetime
-            db = SessionLocal()
-            try:
-                job = db.query(IndexingJob).filter(IndexingJob.id == job_id).first()
-                if job:
-                    job.status = "failed"
-                    job.error_message = str(e)[:1000]  # Limitar longitud del mensaje
-                    job.completed_at = datetime.utcnow()
-                    db.commit()
-            except Exception as query_error:
-                db.rollback()
-                logger.error(f"Failed to update job status: {str(query_error)}")
-            finally:
-                db.close()
-        except Exception as db_error:
-            logger.error(f"Failed to create database session for error update: {str(db_error)}")
+        Returns:
+            Diccionario con estadísticas de la cola
+        """
+        # Contar trabajos por estado
+        pending_count = self.db.query(IndexingJob).filter(IndexingJob.status == "pending").count()
+        running_count = self.db.query(IndexingJob).filter(IndexingJob.status == "running").count()
+        completed_count = self.db.query(IndexingJob).filter(IndexingJob.status == "completed").count()
+        failed_count = self.db.query(IndexingJob).filter(IndexingJob.status == "failed").count()
+        
+        # Obtener trabajos más antiguos pendientes
+        oldest_pending = self.db.query(IndexingJob).filter(
+            IndexingJob.status == "pending"
+        ).order_by(IndexingJob.created_at.asc()).first()
+        
+        return {
+            "pending_jobs": pending_count,
+            "running_jobs": running_count,
+            "completed_jobs": completed_count,
+            "failed_jobs": failed_count,
+            "oldest_pending_job": {
+                "id": oldest_pending.id if oldest_pending else None,
+                "created_at": oldest_pending.created_at if oldest_pending else None,
+                "job_type": oldest_pending.job_type if oldest_pending else None
+            } if oldest_pending else None
+        }

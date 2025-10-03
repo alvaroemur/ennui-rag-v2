@@ -1,11 +1,14 @@
 """
 Router para el sistema de indexación de Google Drive - VERSIÓN CORREGIDA
 """
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 from database.database import get_db
 from database.models import Program, UserModel, IndexingJob, IndexedFile
@@ -14,7 +17,7 @@ from database.schemas import (
     FileSearchRequest, FileSearchResponse, IndexedFileResponse,
     IndexingJobResponse
 )
-from apps.indexing_service import IndexingService, process_indexing_job_background
+from apps.indexing_service import IndexingService
 from apps.jwt import get_current_user_email
 from apps.auth import get_current_user
 
@@ -24,7 +27,6 @@ router = APIRouter(prefix="/indexing", tags=["indexing"])
 @router.post("/scan", response_model=DriveScanResponse)
 async def start_drive_scan(
     request: DriveScanRequest,
-    background_tasks: BackgroundTasks,
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -66,26 +68,27 @@ async def start_drive_scan(
     
     # Iniciar trabajo de indexación
     try:
-        # Crear el job (sin procesar aún)
+        # Crear el job en la cola de trabajos
         job = indexing_service.create_indexing_job(
             program_id=request.program_id,
             user_id=current_user.id,
             folder_id=folder_id,
-            job_type=request.job_type
+            job_type=request.job_type,
+            priority=1,  # Higher priority for manual requests
+            access_token=current_user.google_access_token,
+            include_trashed=request.include_trashed
         )
         
-        # Agregar tarea en background usando FastAPI BackgroundTasks
-        background_tasks.add_task(
-            process_indexing_job_background,
-            job.id,
-            current_user.google_access_token,
-            request.include_trashed
-        )
+        # Get queue status
+        queue_status = indexing_service.get_queue_status()
+        
+        logger.info(f"🚀 Indexing job created via API - Job ID: {job.id}, Program: {program.name} (ID: {program.id}), Type: {request.job_type}, Priority: {job.priority}")
+        logger.info(f"📊 Queue status after job creation - Pending: {queue_status['pending_jobs']}, Running: {queue_status['running_jobs']}, Completed: {queue_status['completed_jobs']}, Failed: {queue_status['failed_jobs']}")
         
         return DriveScanResponse(
             job_id=job.id,
-            message=f"Indexing job started for program {request.program_id}",
-            status="started"
+            message=f"Indexing job queued for program {request.program_id}",
+            status="queued"
         )
     
     except Exception as e:

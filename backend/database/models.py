@@ -274,7 +274,7 @@ class IndexedFile(Base):
 
 
 class IndexingJob(Base):
-    """Model for tracking indexing jobs"""
+    """Model for tracking indexing jobs - now serves as job queue"""
     __tablename__ = "indexing_jobs"
     id = Column(Integer, primary_key=True, index=True)
     program_id = Column(Integer, ForeignKey("programs.id"), nullable=False, index=True)
@@ -284,6 +284,14 @@ class IndexingJob(Base):
     job_type = Column(String, nullable=False)  # full_scan, incremental, specific_folder
     folder_id = Column(String, nullable=True)  # Specific folder ID if applicable
     status = Column(String, default="pending", index=True)  # pending, running, completed, failed, cancelled
+    
+    # Queue management
+    priority = Column(Integer, default=0, index=True)  # Higher number = higher priority
+    retry_count = Column(Integer, default=0)  # Number of retry attempts
+    max_retries = Column(Integer, default=3)  # Maximum retry attempts
+    scheduled_at = Column(DateTime(timezone=True), nullable=True)  # When to process the job
+    locked_at = Column(DateTime(timezone=True), nullable=True)  # When job was locked for processing
+    locked_by = Column(String, nullable=True)  # Process identifier that locked the job
     
     # Progress tracking
     total_files = Column(Integer, default=0)
@@ -295,6 +303,9 @@ class IndexingJob(Base):
     error_message = Column(Text, nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Job parameters (stored as JSON)
+    job_parameters = Column(Text, nullable=True)  # JSON string with job-specific parameters
     
     # Audit
     created_at = Column(DateTime(timezone=True), server_default=func.now())
