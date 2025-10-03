@@ -194,26 +194,62 @@ class IndexingService:
             )
         ).first()
         
-        # Obtener contenido del archivo
+        # Obtener contenido del archivo con gestión de memoria optimizada
         content_text = None
         
-        try:
-            if file_data.get("is_google_doc"):
-                # Exportar documento de Google
-                content_bytes = await scanner.export_google_doc(file_id, "text/plain")
-            elif file_data.get("downloadable"):
-                # Descargar archivo normal
-                content_bytes = await scanner.get_file_content(file_id)
-            else:
-                content_bytes = None
-            
-            if content_bytes:
-                content_text = content_bytes.decode('utf-8', errors='ignore')
-                # Sanitizar contenido: remover caracteres NUL y otros caracteres problemáticos
-                content_text = self._sanitize_content(content_text)
+        # Get file information
+        file_name = file_data.get("name", "unknown")
+        file_size = file_data.get("size", 0)
+        file_size_mb = file_size / (1024 * 1024)
+        mime_type = file_data.get("mimeType", "")
+        modified_time = file_data.get("modifiedTime", "")
         
-        except Exception as e:
-            logger.warning(f"Could not extract content from file {file_id}: {str(e)}")
+        # Use modified time as content hash (changes when file content changes)
+        content_hash = hashlib.md5(modified_time.encode()).hexdigest() if modified_time else None
+        
+        # Only process content text for files under 100MB (videos and large files get metadata only)
+        should_process_content = file_size_mb < 100  # Under 100MB
+        
+        if not should_process_content:
+            logger.info(f"📏 Skipping content download for large file {file_id} ({file_name}): {file_size_mb:.1f}MB >= 100MB limit (metadata only)")
+        else:
+            try:
+                if file_data.get("is_google_doc"):
+                    # Exportar documento de Google
+                    logger.debug(f"📄 Exporting Google Doc: {file_id}")
+                    content_bytes = await scanner.export_google_doc(file_id, "text/plain")
+                elif file_data.get("downloadable"):
+                    # Descargar archivo normal
+                    logger.debug(f"📥 Downloading file: {file_id}")
+                    content_bytes = await scanner.get_file_content(file_id)
+                else:
+                    content_bytes = None
+                
+                if content_bytes:
+                    # Log content size for monitoring
+                    content_size_mb = len(content_bytes) / (1024 * 1024)
+                    logger.debug(f"📊 File content size: {content_size_mb:.1f}MB for {file_id}")
+                    
+                    # Decode content with memory management
+                    content_text = content_bytes.decode('utf-8', errors='ignore')
+                    
+                    # Clear content_bytes to free memory immediately
+                    del content_bytes
+                    
+                    # Sanitizar contenido: remover caracteres NUL y otros caracteres problemáticos
+                    content_text = self._sanitize_content(content_text)
+                    
+                    # Recalculate hash from actual content for text files
+                    content_hash = hashlib.md5(content_text.encode()).hexdigest()
+                    
+                    logger.debug(f"✅ Content processed for {file_id}: {len(content_text)} chars, hash: {content_hash[:8]}...")
+            
+            except Exception as e:
+                logger.warning(f"Could not extract content from file {file_id}: {str(e)}")
+                # Ensure content variables are None on error
+                content_text = None
+                # Keep the modified time hash as fallback
+                content_hash = hashlib.md5(modified_time.encode()).hexdigest() if modified_time else None
         
         # Crear o actualizar registro de archivo
         if existing_file:
@@ -272,32 +308,42 @@ class IndexingService:
             file_data: Datos del archivo
             error_message: Mensaje de error
         """
-        # Obtener el programa para acceder al drive_folder_id
-        program = self.db.query(Program).filter(Program.id == job.program_id).first()
-        if not program:
-            return
-            
-        indexed_file = IndexedFile(
-            drive_folder_id=program.drive_folder_id,
-            drive_file_id=self._sanitize_content(file_data.get("id", "")),
-            drive_file_name=self._sanitize_content(file_data.get("name", "")),
-            file_type=self._sanitize_content(file_data.get("file_type", "")),
-            file_size=file_data.get("size", 0),
-            web_view_link=self._sanitize_content(file_data.get("web_view_link", "")),
-            description=self._sanitize_content(file_data.get("description", "")),
-            parents=json.dumps(file_data.get("parents", [])) if file_data.get("parents") else None,
-            owners=json.dumps(file_data.get("owners", [])) if file_data.get("owners") else None,
-            last_modifying_user=json.dumps(file_data.get("last_modifying_user", {})) if file_data.get("last_modifying_user") else None,
-            md5_checksum=file_data.get("md5_checksum"),
-            is_google_doc=file_data.get("is_google_doc", False),
-            is_downloadable=file_data.get("downloadable", True),
-            indexing_status="failed",
-            indexing_error=self._sanitize_content(error_message),
-            last_indexed_at=datetime.utcnow(),
-            drive_created_time=self._parse_datetime(file_data.get("created_time")),
-            drive_modified_time=self._parse_datetime(file_data.get("modified_time"))
-        )
-        self.db.add(indexed_file)
+        file_id = file_data.get("id", "")
+        
+        # Check if file already exists
+        existing_file = self.db.query(IndexedFile).filter(
+            and_(
+                IndexedFile.program_id == job.program_id,
+                IndexedFile.drive_file_id == file_id
+            )
+        ).first()
+        
+        if existing_file:
+            # Update existing file with error status
+            existing_file.indexing_status = "failed"
+            existing_file.indexing_error = self._sanitize_content(error_message)
+            existing_file.last_indexed_at = datetime.utcnow()
+            logger.debug(f"Updated existing file {file_id} with error status")
+        else:
+            # Create new failed file record
+            indexed_file = IndexedFile(
+                program_id=job.program_id,
+                drive_file_id=self._sanitize_content(file_id),
+                drive_file_name=self._sanitize_content(file_data.get("name", "")),
+                mime_type=self._sanitize_content(file_data.get("mimeType", "")),
+                file_type=self._sanitize_content(file_data.get("file_type", "")),
+                file_size=file_data.get("size", 0),
+                web_view_link=self._sanitize_content(file_data.get("webViewLink", "")),
+                is_google_doc=file_data.get("is_google_doc", False),
+                is_downloadable=file_data.get("downloadable", True),
+                indexing_status="failed",
+                indexing_error=self._sanitize_content(error_message),
+                last_indexed_at=datetime.utcnow(),
+                drive_created_time=self._parse_datetime(file_data.get("createdTime")),
+                drive_modified_time=self._parse_datetime(file_data.get("modifiedTime"))
+            )
+            self.db.add(indexed_file)
+            logger.debug(f"Created new failed file record for {file_id}")
     
     def _sanitize_content(self, content: str) -> str:
         """

@@ -24,3 +24,4 @@ email-validator
 psycopg2-binary
 cloud-sql-python-connector==1.2.4
 pg8000==1.29.6
+psutil==5.9.0

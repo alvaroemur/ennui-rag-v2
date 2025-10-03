@@ -217,7 +217,7 @@ class GoogleDriveScanner:
     
     async def get_file_content(self, file_id: str) -> Optional[bytes]:
         """
-        Download file content as bytes
+        Download file content as bytes with memory management
         
         Args:
             file_id: ID of the file to download
@@ -229,18 +229,27 @@ class GoogleDriveScanner:
             url = f"{self.base_url}/files/{file_id}"
             params = {"alt": "media"}
             
+            # Use streaming download for large files to prevent memory issues
             async with httpx.AsyncClient(timeout=60) as client:
-                response = await client.get(url, headers=self.headers, params=params)
-                if response.status_code == 200:
-                    return response.content
-                else:
-                    return None
-        except Exception:
+                async with client.stream('GET', url, headers=self.headers, params=params) as response:
+                    if response.status_code == 200:
+                        # Read content in chunks to manage memory
+                        content_chunks = []
+                        async for chunk in response.aiter_bytes(chunk_size=8192):  # 8KB chunks
+                            content_chunks.append(chunk)
+                        
+                        # Combine chunks into single bytes object
+                        return b''.join(content_chunks)
+                    else:
+                        logger.warning(f"Failed to download file {file_id}: HTTP {response.status_code}")
+                        return None
+        except Exception as e:
+            logger.error(f"Error downloading file {file_id}: {str(e)}")
             return None
     
     async def export_google_doc(self, file_id: str, mime_type: str = "text/plain") -> Optional[bytes]:
         """
-        Export Google Workspace document to specified format
+        Export Google Workspace document to specified format with memory management
         
         Args:
             file_id: ID of the Google document
@@ -253,13 +262,22 @@ class GoogleDriveScanner:
             url = f"{self.base_url}/files/{file_id}/export"
             params = {"mimeType": mime_type}
             
+            # Use streaming download for large exports to prevent memory issues
             async with httpx.AsyncClient(timeout=60) as client:
-                response = await client.get(url, headers=self.headers, params=params)
-                if response.status_code == 200:
-                    return response.content
-                else:
-                    return None
-        except Exception:
+                async with client.stream('GET', url, headers=self.headers, params=params) as response:
+                    if response.status_code == 200:
+                        # Read content in chunks to manage memory
+                        content_chunks = []
+                        async for chunk in response.aiter_bytes(chunk_size=8192):  # 8KB chunks
+                            content_chunks.append(chunk)
+                        
+                        # Combine chunks into single bytes object
+                        return b''.join(content_chunks)
+                    else:
+                        logger.warning(f"Failed to export Google Doc {file_id}: HTTP {response.status_code}")
+                        return None
+        except Exception as e:
+            logger.error(f"Error exporting Google Doc {file_id}: {str(e)}")
             return None
 
 

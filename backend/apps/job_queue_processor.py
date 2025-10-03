@@ -1,9 +1,11 @@
 """
 Job Queue Processor - Processes indexing jobs from database queue
 """
+import gc
 import json
 import logging
 import os
+import psutil
 import signal
 import sys
 import threading
@@ -18,6 +20,7 @@ from database.database import SessionLocal
 from database.models import IndexingJob, Program, UserModel
 from apps.google_drive import GoogleDriveScanner
 from apps.indexing_service import IndexingService
+from memory_monitor import get_memory_monitor, log_memory_usage
 
 logger = logging.getLogger(__name__)
 
@@ -31,16 +34,73 @@ class JobQueueProcessor:
         self.thread = None
         self.shutdown_event = threading.Event()
         
+        # Memory management settings
+        self.max_file_size_mb = 100  # Maximum file size to process (MB)
+        self.memory_cleanup_interval = 100  # Cleanup memory every N files
+        self.files_processed_since_cleanup = 0
+        
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
         
-        logger.info(f"JobQueueProcessor {self.process_id} initialized")
+        logger.info(f"JobQueueProcessor {self.process_id} initialized with memory management")
+        
+        # Setup memory monitoring
+        self.memory_monitor = get_memory_monitor()
+        self.memory_monitor.add_cleanup_callback(self._cleanup_memory)
+        
+        self._log_memory_usage("Processor initialized")
     
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully"""
         logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         self.stop()
+    
+    def _log_memory_usage(self, context: str = ""):
+        """Log current memory usage for monitoring"""
+        try:
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            memory_mb = memory_info.rss / 1024 / 1024
+            memory_percent = process.memory_percent()
+            
+            logger.info(f"🧠 Memory usage {context}: {memory_mb:.1f}MB ({memory_percent:.1f}%) - PID: {process.pid}")
+            
+            # Log memory warning if usage is high
+            if memory_percent > 80:
+                logger.warning(f"⚠️ High memory usage detected: {memory_percent:.1f}% - Consider cleanup")
+            elif memory_percent > 60:
+                logger.info(f"📊 Moderate memory usage: {memory_percent:.1f}%")
+                
+        except Exception as e:
+            logger.error(f"Error logging memory usage: {str(e)}")
+    
+    def _cleanup_memory(self, force: bool = False):
+        """Clean up memory and run garbage collection"""
+        try:
+            if force or self.files_processed_since_cleanup >= self.memory_cleanup_interval:
+                logger.info(f"🧹 Running memory cleanup (processed {self.files_processed_since_cleanup} files)")
+                
+                # Force garbage collection
+                collected = gc.collect()
+                
+                # Log memory before and after cleanup
+                self._log_memory_usage("before cleanup")
+                
+                # Reset counter
+                self.files_processed_since_cleanup = 0
+                
+                # Log cleanup results
+                logger.info(f"🗑️ Garbage collection completed, collected {collected} objects")
+                self._log_memory_usage("after cleanup")
+                
+        except Exception as e:
+            logger.error(f"Error during memory cleanup: {str(e)}")
+    
+    def _should_skip_file(self, file_data: Dict) -> bool:
+        """Check if file should be skipped (currently no files are skipped)"""
+        # No files are skipped - all files are processed
+        return False
     
     def start(self):
         """Start the job processor in a separate thread"""
@@ -50,9 +110,13 @@ class JobQueueProcessor:
         
         self.running = True
         self.shutdown_event.clear()
+        
+        # Start memory monitoring
+        self.memory_monitor.start_monitoring(interval=30)
+        
         self.thread = threading.Thread(target=self._process_loop, daemon=True)
         self.thread.start()
-        logger.info(f"Job processor {self.process_id} started")
+        logger.info(f"Job processor {self.process_id} started with memory monitoring")
     
     def stop(self):
         """Stop the job processor gracefully"""
@@ -63,17 +127,27 @@ class JobQueueProcessor:
         self.running = False
         self.shutdown_event.set()
         
+        # Stop memory monitoring
+        self.memory_monitor.stop_monitoring()
+        
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=30)  # Wait up to 30 seconds
+        
+        # Final memory cleanup
+        self._cleanup_memory(force=True)
         
         logger.info(f"Job processor {self.process_id} stopped")
     
     def _process_loop(self):
         """Main processing loop - runs in separate thread"""
         logger.info(f"🔄 Job processing loop started for {self.process_id}")
+        self._log_memory_usage("Processing loop started")
         
         while self.running and not self.shutdown_event.is_set():
             try:
+                # Log memory usage periodically
+                self._log_memory_usage("Processing loop iteration")
+                
                 # Log queue status before checking for jobs
                 queue_status = self._get_queue_status()
                 logger.info(f"📊 Queue status - Pending: {queue_status['pending_jobs']}, Running: {queue_status['running_jobs']}, Completed: {queue_status['completed_jobs']}, Failed: {queue_status['failed_jobs']}")
@@ -83,8 +157,15 @@ class JobQueueProcessor:
                 
                 if job:
                     logger.info(f"🚀 Starting job {job.id} (type: {job.job_type}, priority: {job.priority}) for program {job.program_id}")
+                    self._log_memory_usage(f"Before processing job {job.id}")
+                    
                     self._process_job(job)
+                    
                     logger.info(f"✅ Completed job {job.id} processing")
+                    self._log_memory_usage(f"After processing job {job.id}")
+                    
+                    # Cleanup memory after each job
+                    self._cleanup_memory(force=True)
                 else:
                     # No jobs available, wait a bit
                     logger.debug(f"⏳ No jobs available, waiting... (Queue: {queue_status['pending_jobs']} pending)")
@@ -92,9 +173,11 @@ class JobQueueProcessor:
                     
             except Exception as e:
                 logger.error(f"❌ Error in job processing loop: {str(e)}")
+                self._log_memory_usage("After error in processing loop")
                 self.shutdown_event.wait(30)  # Wait before retrying
         
         logger.info(f"🛑 Job processing loop ended for {self.process_id}")
+        self._log_memory_usage("Processing loop ended")
     
     def _get_queue_status(self) -> Dict[str, Any]:
         """Get current queue status"""
@@ -211,26 +294,30 @@ class JobQueueProcessor:
             processing_time = (datetime.utcnow() - start_time).total_seconds()
             logger.error(f"❌ Error processing job {job.id} after {processing_time:.2f} seconds: {str(e)}")
             
-            # Handle retry logic
-            job.retry_count += 1
-            job.error_message = str(e)[:1000]  # Limit error message length
-            
-            if job.retry_count < job.max_retries:
-                # Retry the job
-                job.status = "pending"
-                job.scheduled_at = datetime.utcnow() + timedelta(minutes=5)  # Retry in 5 minutes
-                job.locked_at = None
-                job.locked_by = None
-                logger.warning(f"🔄 Job {job.id} will be retried in 5 minutes ({job.retry_count}/{job.max_retries}) - Error: {str(e)[:200]}")
-            else:
-                # Max retries exceeded, mark as failed
-                job.status = "failed"
-                job.completed_at = datetime.utcnow()
-                job.locked_at = None
-                job.locked_by = None
-                logger.error(f"💥 Job {job.id} failed permanently after {job.max_retries} retries - Final error: {str(e)[:200]}")
-            
-            db.commit()
+            try:
+                # Handle retry logic
+                job.retry_count += 1
+                job.error_message = str(e)[:1000]  # Limit error message length
+                
+                if job.retry_count < job.max_retries:
+                    # Retry the job
+                    job.status = "pending"
+                    job.scheduled_at = datetime.utcnow() + timedelta(minutes=5)  # Retry in 5 minutes
+                    job.locked_at = None
+                    job.locked_by = None
+                    logger.warning(f"🔄 Job {job.id} will be retried in 5 minutes ({job.retry_count}/{job.max_retries}) - Error: {str(e)[:200]}")
+                else:
+                    # Max retries exceeded, mark as failed
+                    job.status = "failed"
+                    job.completed_at = datetime.utcnow()
+                    job.locked_at = None
+                    job.locked_by = None
+                    logger.error(f"💥 Job {job.id} failed permanently after {job.max_retries} retries - Final error: {str(e)[:200]}")
+                
+                db.commit()
+            except Exception as commit_error:
+                logger.error(f"❌ Error committing job status update for job {job.id}: {str(commit_error)}")
+                db.rollback()
         
         finally:
             db.close()
@@ -266,20 +353,32 @@ class JobQueueProcessor:
             
             logger.info(f"📊 Found {job.total_files} files to process for job {job.id}")
             
-            # Process each file
+            # Process each file with memory management
             for i, file_data in enumerate(files, 1):
-                logger.info(f"Processing file {i} of {len(files)} for job {job.id}")
+                file_id = file_data.get('id', 'unknown')
+                file_name = file_data.get('name', 'unnamed')
+                file_size_mb = file_data.get('size', 0) / (1024 * 1024)
+                
+                logger.info(f"📄 Processing file {i} of {len(files)} for job {job.id}: {file_name} ({file_size_mb:.1f}MB)")
+                
                 try:
+                    # Process all files (including large files and videos) with memory optimization
                     self._process_file_sync(indexing_service, job, program, file_data, scanner)
                     job.successful_files += 1
+                    
+                    # Increment processed files counter
+                    self.files_processed_since_cleanup += 1
                     
                     # Log progress every 10 files or for important milestones
                     if job.processed_files % 10 == 0 or i == len(files):
                         progress_pct = (job.processed_files / job.total_files) * 100 if job.total_files > 0 else 0
                         logger.info(f"📈 Job {job.id} progress: {job.processed_files}/{job.total_files} files ({progress_pct:.1f}%) - ✅ {job.successful_files} successful, ❌ {job.failed_files} failed")
                         
+                        # Log memory usage during progress
+                        self._log_memory_usage(f"Job {job.id} progress checkpoint")
+                        
                 except Exception as e:
-                    logger.error(f"❌ Error processing file {file_data.get('id', 'unknown')} ({file_data.get('name', 'unnamed')}): {str(e)}")
+                    logger.error(f"❌ Error processing file {file_id} ({file_name}): {str(e)}")
                     job.failed_files += 1
                     
                     # Create failed file record
@@ -287,9 +386,15 @@ class JobQueueProcessor:
                 
                 job.processed_files += 1
                 
-                # Update progress every 10 files
+                # Update progress and commit every 10 files
                 if job.processed_files % 10 == 0:
                     indexing_service.db.commit()
+                    
+                    # Run memory cleanup periodically
+                    self._cleanup_memory()
+            
+            # Final memory cleanup after processing all files
+            self._cleanup_memory(force=True)
             
             logger.info(f"🎉 Indexing job {job.id} completed! Processed: {job.processed_files}, Successful: {job.successful_files}, Failed: {job.failed_files}")
             
@@ -298,21 +403,31 @@ class JobQueueProcessor:
             raise
     
     def _scan_folder_sync(self, scanner: GoogleDriveScanner, folder_id: str, include_trashed: bool):
-        """Synchronous version of folder scanning"""
-        # This is a simplified version - in practice you'd need to convert
-        # the async GoogleDriveScanner methods to sync or use asyncio.run()
+        """Synchronous version of folder scanning with proper memory management"""
         import asyncio
         
         async def _async_scan():
-            return await scanner.scan_folder_recursive(folder_id, include_trashed)
+            try:
+                logger.info(f"🔍 Starting folder scan for folder {folder_id} (include_trashed: {include_trashed})")
+                self._log_memory_usage("Before folder scan")
+                
+                files = await scanner.scan_folder_recursive(folder_id, include_trashed)
+                
+                logger.info(f"📁 Folder scan completed, found {len(files)} files")
+                self._log_memory_usage("After folder scan")
+                
+                return files
+            except Exception as e:
+                logger.error(f"❌ Error during folder scan: {str(e)}")
+                self._log_memory_usage("After folder scan error")
+                raise
         
-        # Run the async function in a new event loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # Use asyncio.run() instead of creating new event loops to prevent memory leaks
         try:
-            return loop.run_until_complete(_async_scan())
-        finally:
-            loop.close()
+            return asyncio.run(_async_scan())
+        except Exception as e:
+            logger.error(f"❌ Failed to scan folder {folder_id}: {str(e)}")
+            return []
     
     def _process_file_sync(
         self, 
@@ -322,19 +437,37 @@ class JobQueueProcessor:
         file_data: Dict, 
         scanner: GoogleDriveScanner
     ):
-        """Synchronous version of file processing"""
+        """Synchronous version of file processing with memory management"""
         import asyncio
         
-        async def _async_process():
-            await indexing_service._process_file(job, program, file_data, scanner)
+        # Check if file should be skipped (currently no files are skipped)
+        if self._should_skip_file(file_data):
+            return
         
-        # Run the async function in a new event loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        async def _async_process():
+            try:
+                file_id = file_data.get('id', 'unknown')
+                file_name = file_data.get('name', 'unnamed')
+                
+                logger.debug(f"📄 Processing file: {file_name} (ID: {file_id})")
+                self._log_memory_usage(f"Before processing file {file_id}")
+                
+                await indexing_service._process_file(job, program, file_data, scanner)
+                
+                logger.debug(f"✅ File processed successfully: {file_name}")
+                self._log_memory_usage(f"After processing file {file_id}")
+                
+            except Exception as e:
+                logger.error(f"❌ Error processing file {file_data.get('id', 'unknown')}: {str(e)}")
+                self._log_memory_usage(f"After file processing error for {file_data.get('id', 'unknown')}")
+                raise
+        
+        # Use asyncio.run() instead of creating new event loops to prevent memory leaks
         try:
-            loop.run_until_complete(_async_process())
-        finally:
-            loop.close()
+            asyncio.run(_async_process())
+        except Exception as e:
+            logger.error(f"❌ Failed to process file {file_data.get('id', 'unknown')}: {str(e)}")
+            raise
     
     def _create_failed_file_record_sync(
         self, 
