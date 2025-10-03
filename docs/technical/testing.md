@@ -1,3 +1,3 @@
-curl --location 'http://localhost:7000/api/test/process-folder?session_id=7108b037-5a04-46a1-a9fb-e21bc8b7a22b' \
+curl --location 'http://localhost:7000/api/test/process-folder?session_id=32ea5889-94fe-4085-8351-149a4b4e1562' \
 --header 'Content-Type: application/json' \
 --data '{"folder_id": "1F3NQevlP-4m5NXImqPbibAEgtMr0B0s_"}'

@@ -203,15 +203,21 @@ class IndexingService:
         file_size_mb = file_size / (1024 * 1024)
         mime_type = file_data.get("mimeType", "")
         modified_time = file_data.get("modifiedTime", "")
+        file_type = file_data.get("file_type", "")
         
-        # Use modified time as content hash (changes when file content changes)
-        content_hash = hashlib.md5(modified_time.encode()).hexdigest() if modified_time else None
+        # Get MD5 checksum from file_data instead of calculating
+        md5_checksum = file_data.get("md5_checksum")
+        logger.info(f"🔍 File {file_id} ({file_name}) - MD5 checksum: {md5_checksum}")
         
-        # Only process content text for files under 100MB (videos and large files get metadata only)
-        should_process_content = file_size_mb < 100  # Under 100MB
+        # Use MD5 checksum as content hash if available, otherwise use modified time
+        content_hash = md5_checksum if md5_checksum else (hashlib.md5(modified_time.encode()).hexdigest() if modified_time else None)
         
-        if not should_process_content:
-            logger.info(f"📏 Skipping content download for large file {file_id} ({file_name}): {file_size_mb:.1f}MB >= 100MB limit (metadata only)")
+        # Only process content text for files under 100MB and not MP4
+        logger.info(f"🔍 File {file_id} ({file_name}) - File size: {file_size_mb:.1f}MB, file_type: {file_type}")
+        skip_process_content = file_size_mb > 100 or file_type == "mp4"
+        
+        if skip_process_content:
+            logger.info(f"🎥 Skipping content download for file {file_id} ({file_name})")
         else:
             try:
                 if file_data.get("is_google_doc"):
@@ -239,8 +245,13 @@ class IndexingService:
                     # Sanitizar contenido: remover caracteres NUL y otros caracteres problemáticos
                     content_text = self._sanitize_content(content_text)
                     
-                    # Recalculate hash from actual content for text files
-                    content_hash = hashlib.md5(content_text.encode()).hexdigest()
+                    # Use MD5 checksum as content hash if available, otherwise calculate from content
+                    if md5_checksum:
+                        content_hash = md5_checksum
+                        logger.debug(f"✅ Using provided MD5 checksum for {file_id}: {content_hash}")
+                    else:
+                        content_hash = hashlib.md5(content_text.encode()).hexdigest()
+                        logger.debug(f"✅ Calculated content hash for {file_id}: {content_hash[:8]}...")
                     
                     logger.debug(f"✅ Content processed for {file_id}: {len(content_text)} chars, hash: {content_hash[:8]}...")
             
@@ -248,8 +259,8 @@ class IndexingService:
                 logger.warning(f"Could not extract content from file {file_id}: {str(e)}")
                 # Ensure content variables are None on error
                 content_text = None
-                # Keep the modified time hash as fallback
-                content_hash = hashlib.md5(modified_time.encode()).hexdigest() if modified_time else None
+                # Keep the MD5 checksum or modified time hash as fallback
+                content_hash = md5_checksum if md5_checksum else (hashlib.md5(modified_time.encode()).hexdigest() if modified_time else None)
         
         # Crear o actualizar registro de archivo
         if existing_file:
@@ -262,7 +273,7 @@ class IndexingService:
             existing_file.parents = json.dumps(file_data.get("parents", [])) if file_data.get("parents") else None
             existing_file.owners = json.dumps(file_data.get("owners", [])) if file_data.get("owners") else None
             existing_file.last_modifying_user = json.dumps(file_data.get("last_modifying_user", {})) if file_data.get("last_modifying_user") else None
-            existing_file.md5_checksum = file_data.get("md5_checksum")
+            existing_file.md5_checksum = md5_checksum
             existing_file.is_google_doc = file_data.get("is_google_doc", False)
             existing_file.is_downloadable = file_data.get("downloadable", True)
             existing_file.content_text = content_text
@@ -283,7 +294,7 @@ class IndexingService:
                 parents=json.dumps(file_data.get("parents", [])) if file_data.get("parents") else None,
                 owners=json.dumps(file_data.get("owners", [])) if file_data.get("owners") else None,
                 last_modifying_user=json.dumps(file_data.get("last_modifying_user", {})) if file_data.get("last_modifying_user") else None,
-                md5_checksum=file_data.get("md5_checksum"),
+                md5_checksum=md5_checksum,
                 content_text=content_text,
                 is_google_doc=file_data.get("is_google_doc", False),
                 is_downloadable=file_data.get("downloadable", True),
